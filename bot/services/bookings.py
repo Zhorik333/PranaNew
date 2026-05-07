@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
 from typing import Any
 
 from bot.repositories.bookings import BookingsRepository
@@ -51,6 +52,14 @@ class BookingCancellationError(ValueError):
 
 class BookingCompletionError(ValueError):
     """Raised when a booking cannot be marked completed."""
+
+
+class InvalidReviewRequestJob(BookingCompletionError):
+    """Raised when a claimed review request job has an invalid payload."""
+
+    def __init__(self, job_id: int, message: str = "invalid_review_request_payload") -> None:
+        super().__init__(message)
+        self.job_id = job_id
 
 
 def _slot_value(slot: Any, key: str) -> Any:
@@ -136,6 +145,46 @@ class BookingService:
                     "changed": True,
                     "review_request_pending": True,
                 }
+
+    async def claim_due_review_request(self) -> dict[str, int] | None:
+        """Atomically claim the oldest due review request for background delivery."""
+
+        async with self.db_pool.acquire() as connection:
+            async with connection.transaction():
+                row = await BookingsRepository(connection).claim_due_review_request_job()
+        if row is None:
+            return None
+        payload = _slot_value(row, "payload")
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError as exc:
+                raise InvalidReviewRequestJob(int(_slot_value(row, "id"))) from exc
+        job_id = int(_slot_value(row, "id"))
+        try:
+            booking_id = int(payload["booking_id"])
+            user_id = int(payload["user_id"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise InvalidReviewRequestJob(job_id) from exc
+        return {"job_id": job_id, "booking_id": booking_id, "user_id": user_id}
+
+    async def mark_scheduler_job_sent(self, *, job_id: int) -> None:
+        """Mark a claimed scheduler job as delivered."""
+
+        if job_id <= 0:
+            raise BookingCompletionError("scheduler_job_not_found")
+        async with self.db_pool.acquire() as connection:
+            async with connection.transaction():
+                await BookingsRepository(connection).mark_scheduler_job_done(job_id)
+
+    async def restore_scheduler_job_retry(self, *, job_id: int, error: str = "telegram_send_failed") -> None:
+        """Restore a claimed scheduler job so the background worker can retry it."""
+
+        if job_id <= 0:
+            raise BookingCompletionError("scheduler_job_not_found")
+        async with self.db_pool.acquire() as connection:
+            async with connection.transaction():
+                await BookingsRepository(connection).restore_scheduler_job_pending(job_id, error[:200])
 
     async def claim_review_request(self, *, booking_id: int) -> bool:
         """Atomically claim a pending review request notification for sending."""

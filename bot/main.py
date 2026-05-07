@@ -14,6 +14,7 @@ from bot.config import Config, load_config
 from bot.db import DEFAULT_POOL_FACTORY, PoolFactory, close_pool, create_pool
 from bot.routers.admin import create_admin_router
 from bot.routers.client import create_client_router
+from bot.services.review_scheduler import start_review_request_scheduler
 
 RunPollingFunc = Callable[[Bot, Dispatcher], Awaitable[None]]
 
@@ -58,13 +59,22 @@ async def run_application(
     bot = create_bot(config)
     dispatcher = create_dispatcher()
     pool = None
+    scheduler_task = None
 
     try:
         pool = await create_pool(config.database_url, pool_factory=pool_factory)
         dispatcher.workflow_data["db_pool"] = pool
         dispatcher.workflow_data["config"] = config
+        scheduler_task = start_review_request_scheduler(pool, bot, poll_interval_seconds=30)
+        await asyncio.sleep(0)
         await run_polling_func(bot, dispatcher)
     finally:
+        if scheduler_task is not None:
+            scheduler_task.cancel()
+            try:
+                await scheduler_task
+            except (asyncio.CancelledError, Exception):
+                pass
         try:
             await close_pool(pool)
         finally:

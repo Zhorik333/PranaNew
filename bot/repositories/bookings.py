@@ -196,6 +196,59 @@ class BookingsRepository(BaseRepository):
         )
         return pending_job_id is not None
 
+    async def claim_due_review_request_job(self) -> Any:
+        """Atomically claim the oldest due review request job for background delivery."""
+
+        return await self.db.fetchrow(
+            """
+            UPDATE scheduler_jobs
+            SET status = 'running', attempts = attempts + 1, updated_at = now()
+            WHERE id = (
+                SELECT id
+                FROM scheduler_jobs
+                WHERE job_type = 'review_request'
+                  AND (
+                    (status = 'pending' AND run_at <= now())
+                    OR (status = 'running' AND updated_at <= now() - interval '5 minutes')
+                  )
+                ORDER BY run_at, id
+                FOR UPDATE SKIP LOCKED
+                LIMIT 1
+            )
+            RETURNING id, payload
+            """,
+        )
+
+    async def mark_scheduler_job_done(self, job_id: int) -> None:
+        """Mark a claimed scheduler job as delivered."""
+
+        await self.db.execute(
+            """
+            UPDATE scheduler_jobs
+            SET status = 'done', updated_at = now()
+            WHERE id = $1
+              AND status = 'running'
+            """,
+            job_id,
+        )
+
+    async def restore_scheduler_job_pending(self, job_id: int, last_error: str) -> None:
+        """Restore a claimed scheduler job to pending after delivery failure."""
+
+        await self.db.execute(
+            """
+            UPDATE scheduler_jobs
+            SET status = 'pending',
+                run_at = now() + interval '5 minutes',
+                last_error = $2,
+                updated_at = now()
+            WHERE id = $1
+              AND status = 'running'
+            """,
+            job_id,
+            last_error,
+        )
+
     async def claim_pending_review_request_job(self, booking_id: int) -> bool:
         """Atomically claim the oldest pending review request job for delivery."""
 
