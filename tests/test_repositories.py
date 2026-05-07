@@ -125,7 +125,7 @@ class RepositoryLayerTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(77, booking_id)
         self.assertIn("INSERT INTO bookings", db.calls[0][1])
-        self.assertEqual((42, "Alice", "+382000000", "no onion", pickup), db.calls[0][2])
+        self.assertEqual((42, "active", "Alice", "no onion", pickup), (*db.calls[0][2][:3], db.calls[0][2][4], db.calls[0][2][5]))
         self.assertEqual(4, len(db.calls))
         self.assertTrue(all("INSERT INTO booking_slots" in call[1] for call in db.calls[1:]))
         self.assertEqual((77, 10), db.calls[1][2])

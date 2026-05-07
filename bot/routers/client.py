@@ -13,10 +13,12 @@ from bot.keyboards.client import (
     language_selection_keyboard,
     main_menu_keyboard,
 )
+from bot.services.bookings import BookingCreationError, BookingService
 from bot.services.language import ensure_user_language, get_user_language, save_user_language
 from bot.services.slots import (
     BOOKING_PREVIEW_CALLBACK_PREFIX,
     BOOKING_PREVIEW_CHANGE_CALLBACK_PREFIX,
+    BOOKING_PREVIEW_CONFIRM_CALLBACK_PREFIX,
     DEFAULT_MAX_CONSECUTIVE_SLOTS,
     SLOT_CALLBACK_PREFIX,
     SlotSelectionError,
@@ -157,6 +159,35 @@ async def handle_booking_preview_change(callback: CallbackQuery, db_pool) -> Non
     await callback.answer()
 
 
+async def handle_booking_confirm(callback: CallbackQuery, db_pool) -> None:
+    """Atomically confirm a booking from selected slot ids."""
+
+    tg_id = callback.from_user.id if callback.from_user is not None else 0
+    language = await get_user_language(db_pool, tg_id)
+    try:
+        selected_slot_ids = parse_booking_preview_callback_data(
+            callback.data or "",
+            prefix=BOOKING_PREVIEW_CONFIRM_CALLBACK_PREFIX,
+        )
+        booking_id = await BookingService(db_pool).create_booking(user_id=tg_id, selected_slot_ids=selected_slot_ids)
+    except (ValueError, BookingCreationError) as error:
+        error_key = str(error)
+        if error_key == "max_consecutive":
+            await callback.answer(
+                t("max_consecutive_error", language, max_slots=DEFAULT_MAX_CONSECUTIVE_SLOTS),
+                show_alert=True,
+            )
+        elif error_key == "non_consecutive":
+            await callback.answer(t("non_consecutive_error", language), show_alert=True)
+        else:
+            await callback.answer(t("booking_unavailable", language), show_alert=True)
+        return
+
+    if callback.message is not None:
+        await callback.message.edit_text(t("booking_confirmed", language, booking_id=booking_id))
+    await callback.answer()
+
+
 async def handle_language_selected(callback: CallbackQuery, db_pool) -> None:
     """Persist a language selected from inline callback buttons."""
 
@@ -181,6 +212,10 @@ def create_client_router() -> Router:
     router.message.register(handle_free_slots_menu, F.text.in_(FREE_SLOTS_MENU_TEXTS))
     router.message.register(handle_language_menu, F.text.in_(LANGUAGE_MENU_TEXTS))
     router.message.register(handle_reviews_menu, F.text.in_(REVIEWS_MENU_TEXTS))
+    router.callback_query.register(
+        handle_booking_confirm,
+        F.data.startswith(BOOKING_PREVIEW_CONFIRM_CALLBACK_PREFIX),
+    )
     router.callback_query.register(
         handle_booking_preview,
         F.data.startswith(BOOKING_PREVIEW_CALLBACK_PREFIX),
