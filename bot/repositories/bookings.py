@@ -137,3 +137,101 @@ class BookingsRepository(BaseRepository):
             status,
             cancellation_reason,
         )
+
+    async def create_review_request_job(self, *, booking_id: int, user_id: int) -> None:
+        """Persist a pending review request notification for a completed booking."""
+
+        await self.db.execute(
+            """
+            INSERT INTO scheduler_jobs (job_type, payload, run_at, status)
+            VALUES (
+                'review_request',
+                jsonb_build_object('booking_id', $1::bigint, 'user_id', $2::bigint),
+                now(),
+                'pending'
+            )
+            """,
+            booking_id,
+            user_id,
+        )
+
+    async def has_pending_review_request_job(self, booking_id: int) -> bool:
+        """Return True when a review request still needs to be sent."""
+
+        pending_job_id = await self.db.fetchval(
+            """
+            SELECT id
+            FROM scheduler_jobs
+            WHERE job_type = 'review_request'
+              AND status = 'pending'
+              AND (payload->>'booking_id')::bigint = $1
+            ORDER BY id
+            LIMIT 1
+            """,
+            booking_id,
+        )
+        return pending_job_id is not None
+
+    async def claim_pending_review_request_job(self, booking_id: int) -> bool:
+        """Atomically claim the oldest pending review request job for delivery."""
+
+        claimed_job_id = await self.db.fetchval(
+            """
+            UPDATE scheduler_jobs
+            SET status = 'running', attempts = attempts + 1, updated_at = now()
+            WHERE id = (
+                SELECT id
+                FROM scheduler_jobs
+                WHERE job_type = 'review_request'
+                  AND status = 'pending'
+                  AND (payload->>'booking_id')::bigint = $1
+                ORDER BY id
+                FOR UPDATE SKIP LOCKED
+                LIMIT 1
+            )
+            RETURNING id
+            """,
+            booking_id,
+        )
+        return claimed_job_id is not None
+
+    async def mark_review_request_job_done(self, booking_id: int) -> None:
+        """Mark the running review request for a booking as delivered."""
+
+        await self.db.execute(
+            """
+            UPDATE scheduler_jobs
+            SET status = 'done', updated_at = now()
+            WHERE id = (
+                SELECT id
+                FROM scheduler_jobs
+                WHERE job_type = 'review_request'
+                  AND status = 'running'
+                  AND (payload->>'booking_id')::bigint = $1
+                ORDER BY id
+                LIMIT 1
+            )
+            """,
+            booking_id,
+        )
+
+    async def restore_review_request_job_pending(self, booking_id: int, last_error: str) -> None:
+        """Restore a claimed review request job so a later callback can retry it."""
+
+        await self.db.execute(
+            """
+            UPDATE scheduler_jobs
+            SET status = 'pending', last_error = $2, updated_at = now()
+            WHERE id = (
+                SELECT id
+                FROM scheduler_jobs
+                WHERE job_type = 'review_request'
+                  AND status = 'running'
+                  AND (payload->>'booking_id')::bigint = $1
+                ORDER BY id
+                LIMIT 1
+            )
+            """,
+            booking_id,
+            last_error,
+        )

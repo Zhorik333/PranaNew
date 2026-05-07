@@ -12,6 +12,7 @@ from aiogram.enums import ParseMode
 
 from bot.config import Config, load_config
 from bot.db import DEFAULT_POOL_FACTORY, PoolFactory, close_pool, create_pool
+from bot.routers.admin import create_admin_router
 from bot.routers.client import create_client_router
 
 RunPollingFunc = Callable[[Bot, Dispatcher], Awaitable[None]]
@@ -34,7 +35,7 @@ def create_dispatcher(*routers: Router) -> Dispatcher:
     """
 
     dispatcher = Dispatcher()
-    for router in routers or (create_client_router(),):
+    for router in routers or (create_client_router(), create_admin_router()):
         dispatcher.include_router(router)
     return dispatcher
 
@@ -61,6 +62,7 @@ async def run_application(
     try:
         pool = await create_pool(config.database_url, pool_factory=pool_factory)
         dispatcher.workflow_data["db_pool"] = pool
+        dispatcher.workflow_data["config"] = config
         await run_polling_func(bot, dispatcher)
     finally:
         try:

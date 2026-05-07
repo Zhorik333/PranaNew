@@ -8,6 +8,8 @@ from aiogram.enums import ParseMode
 
 from bot.config import Config
 from bot.main import create_bot, create_dispatcher, main, run_application, run_polling
+from bot.routers.admin import create_admin_router
+from bot.routers.client import create_client_router
 
 
 class MainRuntimeTest(unittest.IsolatedAsyncioTestCase):
@@ -32,7 +34,13 @@ class MainRuntimeTest(unittest.IsolatedAsyncioTestCase):
         dispatcher = create_dispatcher(router)
 
         self.assertIsInstance(dispatcher, Dispatcher)
-        self.assertIn(router, dispatcher.sub_routers)
+        self.assertEqual([router], dispatcher.sub_routers)
+
+    def test_task_052_default_dispatcher_includes_client_and_admin_routers(self):
+        dispatcher = create_dispatcher()
+        router_names = [router.name for router in dispatcher.sub_routers]
+
+        self.assertEqual([create_client_router().name, create_admin_router().name], router_names)
 
     async def test_task_004_run_polling_deletes_webhook_and_starts_polling(self):
         dispatcher = create_dispatcher(Router(name="test-router"))
