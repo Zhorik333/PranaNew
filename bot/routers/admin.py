@@ -18,6 +18,16 @@ from bot.services.admin_bookings import (
     parse_admin_booking_status_command,
     parse_admin_bookings_command,
 )
+from bot.services.admin_users import (
+    AdminUserError,
+    AdminUsersService,
+    format_admin_user_details,
+    format_admin_user_history,
+    format_admin_users_report,
+    parse_admin_user_command,
+    parse_admin_user_history_command,
+    parse_admin_users_command,
+)
 from bot.services.admin_slots import (
     AdminSlotError,
     AdminSlotsService,
@@ -77,9 +87,57 @@ async def handle_admin_booked_slots_menu(message: Message, config: Config) -> No
         [
             t("admin_booked_slots_help", ADMIN_LANGUAGE),
             t("admin_bookings_help", ADMIN_LANGUAGE),
+            t("admin_users_help", ADMIN_LANGUAGE),
         ]
     )
     await message.answer(help_text, reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE))
+
+
+async def handle_admin_users_list(message: Message, db_pool, config: Config) -> None:
+    """List users with booking counters."""
+
+    if not is_admin_chat(message, config):
+        await message.answer(t("admin_only", ADMIN_LANGUAGE))
+        return
+    try:
+        search, limit = parse_admin_users_command(message.text or "")
+        rows = await AdminUsersService(db_pool).list_users(search=search, limit=limit)
+        report = format_admin_users_report(rows, search=search, language=ADMIN_LANGUAGE)
+    except AdminUserError:
+        await message.answer(t("admin_user_command_error", ADMIN_LANGUAGE))
+        return
+    await message.answer(report, reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE))
+
+
+async def handle_admin_user_detail(message: Message, db_pool, config: Config) -> None:
+    """Show one user's profile and booking counters."""
+
+    if not is_admin_chat(message, config):
+        await message.answer(t("admin_only", ADMIN_LANGUAGE))
+        return
+    try:
+        user_id = parse_admin_user_command(message.text or "")
+        details = await AdminUsersService(db_pool).get_user_details(user_id)
+    except AdminUserError:
+        await message.answer(t("admin_user_command_error", ADMIN_LANGUAGE))
+        return
+    await message.answer(format_admin_user_details(details, language=ADMIN_LANGUAGE), reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE))
+
+
+async def handle_admin_user_history(message: Message, db_pool, config: Config) -> None:
+    """Show one user's booking history."""
+
+    if not is_admin_chat(message, config):
+        await message.answer(t("admin_only", ADMIN_LANGUAGE))
+        return
+    try:
+        user_id, limit = parse_admin_user_history_command(message.text or "")
+        rows = await AdminUsersService(db_pool).list_user_history(user_id=user_id, limit=limit)
+        report = format_admin_user_history(user_id, rows, language=ADMIN_LANGUAGE)
+    except AdminUserError:
+        await message.answer(t("admin_user_command_error", ADMIN_LANGUAGE))
+        return
+    await message.answer(report, reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE))
 
 
 async def handle_admin_booking_list(message: Message, db_pool, config: Config) -> None:
@@ -264,6 +322,9 @@ def create_admin_router() -> Router:
     router.message.register(handle_admin_booking_list, Command("bookings"))
     router.message.register(handle_admin_booking_detail, Command("booking"))
     router.message.register(handle_admin_booking_status, Command("booking_status"))
+    router.message.register(handle_admin_users_list, Command("users"))
+    router.message.register(handle_admin_user_detail, Command("user"))
+    router.message.register(handle_admin_user_history, Command("user_history"))
     router.message.register(handle_admin_generate_slots_menu, F.text == t("admin_menu_generate_slots", ADMIN_LANGUAGE))
     router.message.register(handle_admin_booked_slots_menu, F.text == t("admin_menu_booked_slots", ADMIN_LANGUAGE))
     router.callback_query.register(
