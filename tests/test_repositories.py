@@ -131,6 +131,22 @@ class RepositoryLayerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((77, 10), db.calls[1][2])
         self.assertEqual((77, 12), db.calls[3][2])
 
+    async def test_task_051_bookings_repository_locks_and_cancels_booking(self):
+        db = FakeDatabase()
+        db.fetchrow_result = {"id": 77, "status": "active"}
+        repository = BookingsRepository(db)
+
+        booking = await repository.get_by_id_for_update(77)
+        await repository.set_status(77, "cancelled", cancellation_reason="client_cancelled")
+
+        self.assertEqual({"id": 77, "status": "active"}, booking)
+        self.assertIn("FOR UPDATE", db.calls[0][1])
+        self.assertEqual((77,), db.calls[0][2])
+        self.assertIn("UPDATE bookings", db.calls[1][1])
+        self.assertIn("cancelled_at", db.calls[1][1])
+        self.assertIn("cancellation_reason", db.calls[1][1])
+        self.assertEqual((77, "cancelled", "client_cancelled"), db.calls[1][2])
+
     async def test_task_008_reviews_repository_creates_and_lists_published_reviews(self):
         db = FakeDatabase()
         db.fetchrow_result = {"id": 5, "status": "pending"}

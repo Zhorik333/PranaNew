@@ -16,6 +16,10 @@ class BookingCreationError(ValueError):
     """Raised when a booking cannot be created from selected slots."""
 
 
+class BookingCancellationError(ValueError):
+    """Raised when a booking cannot be cancelled."""
+
+
 def _slot_value(slot: Any, key: str) -> Any:
     if isinstance(slot, dict):
         return slot[key]
@@ -53,10 +57,41 @@ def _count_row_booked_count(row: Any) -> int:
 
 
 class BookingService:
-    """Creates bookings atomically against an asyncpg-like pool."""
+    """Creates and cancels bookings atomically against an asyncpg-like pool."""
 
     def __init__(self, db_pool) -> None:
         self.db_pool = db_pool
+
+    async def cancel_booking(self, *, user_id: int, booking_id: int, cancellation_reason: str | None = None) -> bool:
+        """Cancel an active booking, preserving history and freeing its slots.
+
+        Returns True when the call changed an active booking to cancelled and
+        False when the booking was already cancelled. Missing/foreign bookings
+        and completed bookings are rejected inside the same transaction.
+        """
+
+        if booking_id <= 0:
+            raise BookingCancellationError("booking_not_found")
+
+        async with self.db_pool.acquire() as connection:
+            async with connection.transaction():
+                bookings_repository = BookingsRepository(connection)
+                booking = await bookings_repository.get_by_id_for_update(booking_id)
+                if booking is None or int(_slot_value(booking, "user_id")) != int(user_id):
+                    raise BookingCancellationError("booking_not_found")
+
+                status = str(_slot_value(booking, "status"))
+                if status == "cancelled":
+                    return False
+                if status != "active":
+                    raise BookingCancellationError("booking_cannot_cancel")
+
+                await bookings_repository.set_status(
+                    booking_id,
+                    "cancelled",
+                    cancellation_reason=cancellation_reason,
+                )
+                return True
 
     async def create_booking(self, *, user_id: int, selected_slot_ids: list[int]) -> int:
         """Create or return an idempotent active booking for selected slots.

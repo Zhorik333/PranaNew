@@ -1,6 +1,8 @@
 import unittest
 from datetime import date, datetime, time, timezone
 
+from aiogram.types import InlineKeyboardMarkup
+
 from bot.i18n import SUPPORTED_LANGUAGES, t
 from bot.routers.client import create_client_router, handle_booking_confirm, handle_booking_preview
 from bot.services.bookings import BookingCreationError, BookingService
@@ -195,7 +197,7 @@ class BookingConfirmationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((None, {}), callback.answers[0])
         text, kwargs = callback.message.edited_texts[0]
         self.assertIn(t("booking_confirmed", "ru", booking_id=700), text)
-        self.assertNotIn("reply_markup", kwargs)
+        self.assertIsInstance(kwargs["reply_markup"], InlineKeyboardMarkup)
 
     async def test_task_050_confirm_callback_alerts_when_slots_became_unavailable(self):
         connection = FakeConnection()

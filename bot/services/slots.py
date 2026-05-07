@@ -16,6 +16,7 @@ SLOT_CALLBACK_PREFIX = "slot:"
 BOOKING_PREVIEW_CALLBACK_PREFIX = "preview:"
 BOOKING_PREVIEW_CONFIRM_CALLBACK_PREFIX = "confirm_booking:"
 BOOKING_PREVIEW_CHANGE_CALLBACK_PREFIX = "change_booking:"
+BOOKING_CANCEL_CALLBACK_PREFIX = "cancel_booking:"
 DEFAULT_MAX_CONSECUTIVE_SLOTS = 5
 
 
@@ -72,6 +73,25 @@ def build_booking_preview_change_callback_data(selected_slot_ids: list[int]) -> 
     if not selected_slot_ids:
         raise ValueError("Selected slots cannot be empty")
     return f"{BOOKING_PREVIEW_CHANGE_CALLBACK_PREFIX}{_format_selected_ids(selected_slot_ids)}"
+
+
+def build_booking_cancel_callback_data(booking_id: int) -> str:
+    """Build callback data for cancelling an existing booking."""
+
+    if booking_id <= 0:
+        raise ValueError("Booking id must be positive")
+    return f"{BOOKING_CANCEL_CALLBACK_PREFIX}{booking_id}"
+
+
+def parse_booking_cancel_callback_data(callback_data: str) -> int:
+    """Parse cancel callback data into a booking id."""
+
+    if not callback_data.startswith(BOOKING_CANCEL_CALLBACK_PREFIX):
+        raise ValueError("Invalid booking cancel callback data")
+    booking_id = int(callback_data.removeprefix(BOOKING_CANCEL_CALLBACK_PREFIX))
+    if booking_id <= 0:
+        raise ValueError("Booking id must be positive")
+    return booking_id
 
 
 def parse_booking_preview_callback_data(callback_data: str, *, prefix: str = BOOKING_PREVIEW_CALLBACK_PREFIX) -> list[int]:

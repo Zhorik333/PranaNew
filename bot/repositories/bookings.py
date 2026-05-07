@@ -106,7 +106,22 @@ class BookingsRepository(BaseRepository):
             booking_id,
         )
 
-    async def set_status(self, booking_id: int, status: str) -> None:
+    async def get_by_id_for_update(self, booking_id: int) -> Any:
+        """Lock and return one booking by id for status transitions."""
+
+        return await self.db.fetchrow(
+            """
+            SELECT id, user_id, status, customer_name, customer_phone, comment,
+                   pickup_time, created_at, confirmed_at, completed_at, cancelled_at,
+                   cancellation_reason
+            FROM bookings
+            WHERE id = $1
+            FOR UPDATE
+            """,
+            booking_id,
+        )
+
+    async def set_status(self, booking_id: int, status: str, *, cancellation_reason: str | None = None) -> None:
         """Update booking status and relevant timestamp."""
 
         await self.db.execute(
@@ -114,9 +129,11 @@ class BookingsRepository(BaseRepository):
             UPDATE bookings
             SET status = $2,
                 completed_at = CASE WHEN $2 = 'completed' THEN now() ELSE completed_at END,
-                cancelled_at = CASE WHEN $2 = 'cancelled' THEN now() ELSE cancelled_at END
+                cancelled_at = CASE WHEN $2 = 'cancelled' THEN now() ELSE cancelled_at END,
+                cancellation_reason = CASE WHEN $2 = 'cancelled' THEN $3 ELSE cancellation_reason END
             WHERE id = $1
             """,
             booking_id,
             status,
+            cancellation_reason,
         )

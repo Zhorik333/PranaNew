@@ -11,6 +11,7 @@ from bot.services.slots import (
     build_booking_preview_callback_data,
     build_booking_preview_change_callback_data,
     build_booking_preview_confirm_callback_data,
+    build_booking_cancel_callback_data,
     build_slot_callback_data,
     format_slot_label,
     slot_id,
@@ -89,6 +90,21 @@ def booking_preview_keyboard(selected_slot_ids: list[int], *, language: str) -> 
                     text=t("change", language),
                     callback_data=build_booking_preview_change_callback_data(selected_slot_ids),
                 ),
+            ]
+        ]
+    )
+
+
+def booking_cancel_keyboard(booking_id: int, *, language: str) -> InlineKeyboardMarkup:
+    """Build a one-button inline keyboard to cancel an existing booking."""
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=t("cancel_booking", language),
+                    callback_data=build_booking_cancel_callback_data(booking_id),
+                )
             ]
         ]
     )
