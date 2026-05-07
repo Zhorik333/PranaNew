@@ -1,3 +1,4 @@
+import inspect
 import unittest
 from datetime import datetime, timezone
 
@@ -300,9 +301,12 @@ class BookingCompletionTest(unittest.IsolatedAsyncioTestCase):
     def test_task_052_admin_router_registers_complete_callback_without_start_command(self):
         router = create_admin_router()
         callback_handlers = [handler.callback for handler in router.callback_query.handlers]
+        source = inspect.getsource(create_admin_router)
 
         self.assertIn(handle_booking_complete, callback_handlers)
-        self.assertEqual([], router.message.handlers)
+        self.assertNotIn("CommandStart", source)
+        self.assertNotIn('Command("start")', source)
+        self.assertNotIn("Command('start')", source)
 
 
 if __name__ == "__main__":

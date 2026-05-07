@@ -2,10 +2,32 @@
 
 from __future__ import annotations
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 
 from bot.i18n import t
 from bot.services.bookings import build_booking_complete_callback_data, build_review_request_callback_data
+
+
+ADMIN_MENU_LANGUAGE = "ru"
+
+
+def admin_menu_keyboard(language: str = ADMIN_MENU_LANGUAGE) -> ReplyKeyboardMarkup:
+    """Build the persistent admin menu keyboard."""
+
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text=t("admin_menu_generate_slots", language)),
+                KeyboardButton(text=t("admin_menu_booked_slots", language)),
+            ],
+            [
+                KeyboardButton(text=t("admin_menu_active_date", language)),
+                KeyboardButton(text=t("admin_menu_reviews", language)),
+            ],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
 
 
 def booking_complete_keyboard(booking_id: int, *, language: str) -> InlineKeyboardMarkup:

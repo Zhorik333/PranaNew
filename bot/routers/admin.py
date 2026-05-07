@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from aiogram import F, Router
-from aiogram.types import CallbackQuery
+from aiogram.filters import Command
+from aiogram.types import CallbackQuery, Message
 
 from bot.config import Config
 from bot.i18n import t
-from bot.keyboards.admin import review_request_keyboard
+from bot.keyboards.admin import admin_menu_keyboard, review_request_keyboard
 from bot.services.bookings import (
     BOOKING_COMPLETE_CALLBACK_PREFIX,
     BookingCompletionError,
@@ -16,6 +17,28 @@ from bot.services.bookings import (
 )
 
 ADMIN_LANGUAGE = "ru"
+
+
+def is_admin_chat(message: Message, config: Config) -> bool:
+    """Return true when a message belongs to the configured admin chat."""
+
+    return message.chat.id == config.admin_chat_id
+
+
+async def handle_chat_id(message: Message) -> None:
+    """Show the current Telegram chat id for setup."""
+
+    await message.answer(t("admin_chat_id", ADMIN_LANGUAGE, chat_id=message.chat.id))
+
+
+async def handle_admin_entry(message: Message, config: Config) -> None:
+    """Open the admin menu only inside the configured admin chat."""
+
+    if not is_admin_chat(message, config):
+        await message.answer(t("admin_only", ADMIN_LANGUAGE))
+        return
+
+    await message.answer(t("admin_menu_title", ADMIN_LANGUAGE), reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE))
 
 
 async def handle_booking_complete(callback: CallbackQuery, db_pool, config: Config) -> None:
@@ -64,6 +87,8 @@ def create_admin_router() -> Router:
     """Create admin handlers for booking management callbacks."""
 
     router = Router(name="admin")
+    router.message.register(handle_chat_id, Command("chatid"))
+    router.message.register(handle_admin_entry, Command("admin"))
     router.callback_query.register(
         handle_booking_complete,
         F.data.startswith(BOOKING_COMPLETE_CALLBACK_PREFIX),
