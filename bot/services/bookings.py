@@ -90,10 +90,18 @@ def _count_row_booked_count(row: Any) -> int:
 
 
 class BookingService:
-    """Creates and cancels bookings atomically against an asyncpg-like pool."""
+    """Creates and manages bookings atomically against an asyncpg-like pool."""
 
     def __init__(self, db_pool) -> None:
         self.db_pool = db_pool
+
+    async def get_admin_notification_details(self, *, booking_id: int) -> Any:
+        """Fetch compact booking details for an admin-group notification."""
+
+        if booking_id <= 0:
+            raise BookingCreationError("booking_not_found")
+        async with self.db_pool.acquire() as connection:
+            return await BookingsRepository(connection).get_admin_notification_details(booking_id)
 
     async def complete_booking(self, *, booking_id: int) -> dict[str, int | bool]:
         """Mark an active booking as completed and return user notification data."""

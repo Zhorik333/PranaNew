@@ -121,6 +121,30 @@ class BookingsRepository(BaseRepository):
             booking_id,
         )
 
+    async def get_admin_notification_details(self, booking_id: int) -> Any:
+        """Return booking details needed for compact admin notifications."""
+
+        return await self.db.fetchrow(
+            """
+            SELECT
+                b.id AS booking_id,
+                b.user_id,
+                u.username,
+                u.first_name,
+                u.last_name,
+                MIN(s.slot_date) AS slot_date,
+                string_agg(to_char(s.starts_at, 'HH24:MI'), ', ' ORDER BY s.starts_at) AS slots_label,
+                b.pickup_time
+            FROM bookings b
+            JOIN users u ON u.tg_id = b.user_id
+            JOIN booking_slots bs ON bs.booking_id = b.id
+            JOIN slots s ON s.id = bs.slot_id
+            WHERE b.id = $1
+            GROUP BY b.id, b.user_id, u.username, u.first_name, u.last_name, b.pickup_time
+            """,
+            booking_id,
+        )
+
     async def set_status(self, booking_id: int, status: str, *, cancellation_reason: str | None = None) -> None:
         """Update booking status and relevant timestamp."""
 

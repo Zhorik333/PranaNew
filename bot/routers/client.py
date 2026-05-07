@@ -7,6 +7,7 @@ from aiogram.filters import CommandStart
 from aiogram.types import CallbackQuery, Message
 
 from bot.i18n import SUPPORTED_LANGUAGES, t
+from bot.keyboards.admin import booking_complete_keyboard
 from bot.keyboards.client import (
     available_slots_keyboard,
     booking_preview_keyboard,
@@ -14,6 +15,7 @@ from bot.keyboards.client import (
     language_selection_keyboard,
     main_menu_keyboard,
 )
+from bot.services.booking_notifications import format_admin_new_booking_message
 from bot.services.bookings import BookingCancellationError, BookingCreationError, BookingService
 from bot.services.language import ensure_user_language, get_user_language, save_user_language
 from bot.services.slots import (
@@ -162,17 +164,18 @@ async def handle_booking_preview_change(callback: CallbackQuery, db_pool) -> Non
     await callback.answer()
 
 
-async def handle_booking_confirm(callback: CallbackQuery, db_pool) -> None:
+async def handle_booking_confirm(callback: CallbackQuery, db_pool, config=None) -> None:
     """Atomically confirm a booking from selected slot ids."""
 
     tg_id = callback.from_user.id if callback.from_user is not None else 0
     language = await get_user_language(db_pool, tg_id)
+    booking_service = BookingService(db_pool)
     try:
         selected_slot_ids = parse_booking_preview_callback_data(
             callback.data or "",
             prefix=BOOKING_PREVIEW_CONFIRM_CALLBACK_PREFIX,
         )
-        booking_id = await BookingService(db_pool).create_booking(user_id=tg_id, selected_slot_ids=selected_slot_ids)
+        booking_id = await booking_service.create_booking(user_id=tg_id, selected_slot_ids=selected_slot_ids)
     except (ValueError, BookingCreationError) as error:
         error_key = str(error)
         if error_key == "max_consecutive":
@@ -191,6 +194,18 @@ async def handle_booking_confirm(callback: CallbackQuery, db_pool) -> None:
             t("booking_confirmed", language, booking_id=booking_id),
             reply_markup=booking_cancel_keyboard(booking_id, language=language),
         )
+    bot = getattr(callback, "bot", None)
+    if config is not None and bot is not None:
+        try:
+            details = await booking_service.get_admin_notification_details(booking_id=booking_id)
+            if details is not None:
+                await bot.send_message(
+                    config.admin_chat_id,
+                    format_admin_new_booking_message(details, language="ru"),
+                    reply_markup=booking_complete_keyboard(booking_id, language="ru"),
+                )
+        except Exception:
+            pass
     await callback.answer()
 
 
