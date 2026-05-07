@@ -30,6 +30,6 @@ uv pip install -r requirements.txt
 ## Локальные проверки
 
 ```bash
-python3 -m compileall bot tests
-python3 -m unittest discover -s tests -v
+.venv/bin/python -m compileall bot tests
+.venv/bin/python -m unittest discover -s tests -v
 ```
