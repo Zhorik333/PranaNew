@@ -13,8 +13,23 @@ Telegram-бот бронирования временных слотов для 
 - PostgreSQL
 - i18n: RU / EN / SR
 
+## Установка зависимостей
+
+```bash
+# В WSL предпочтительно через uv, потому что python3 -m venv может быть без ensurepip.
+uv venv .venv
+source .venv/bin/activate
+uv pip install -r requirements.txt
+
+# Альтернатива, если python3-venv установлен:
+# python3 -m venv .venv
+# source .venv/bin/activate
+# python -m pip install -r requirements.txt
+```
+
 ## Локальные проверки
 
 ```bash
+python3 -m compileall bot tests
 python3 -m unittest discover -s tests -v
 ```
