@@ -8,8 +8,15 @@ from aiogram.types import CallbackQuery, Message
 
 from bot.i18n import SUPPORTED_LANGUAGES, t
 from bot.keyboards.client import available_slots_keyboard, language_selection_keyboard, main_menu_keyboard
-from bot.services.language import ensure_user_language, save_user_language
-from bot.services.slots import list_available_slots
+from bot.services.language import ensure_user_language, get_user_language, save_user_language
+from bot.services.slots import (
+    DEFAULT_MAX_CONSECUTIVE_SLOTS,
+    SLOT_CALLBACK_PREFIX,
+    SlotSelectionError,
+    list_available_slots,
+    parse_slot_callback_data,
+    toggle_slot_selection,
+)
 
 LANGUAGE_CALLBACK_PREFIX = "language:"
 LANGUAGE_MENU_TEXTS = {t("menu_language", language) for language in SUPPORTED_LANGUAGES}
@@ -49,6 +56,40 @@ async def handle_reviews_menu(message: Message, db_pool) -> None:
     await message.answer(t("reviews_unavailable", language), reply_markup=main_menu_keyboard(language))
 
 
+async def handle_slot_selected(callback: CallbackQuery, db_pool) -> None:
+    """Toggle one slot selection and redraw inline slot buttons."""
+
+    tg_id = callback.from_user.id if callback.from_user is not None else 0
+    language = await get_user_language(db_pool, tg_id)
+    try:
+        clicked_slot_id, selected_slot_ids = parse_slot_callback_data(callback.data or "")
+        slots = await list_available_slots(db_pool)
+        new_selected_ids = toggle_slot_selection(
+            slots,
+            selected_slot_ids=selected_slot_ids,
+            clicked_slot_id=clicked_slot_id,
+        )
+    except SlotSelectionError as error:
+        error_key = str(error)
+        if error_key == "max_consecutive":
+            await callback.answer(
+                t("max_consecutive_error", language, max_slots=DEFAULT_MAX_CONSECUTIVE_SLOTS),
+                show_alert=True,
+            )
+        elif error_key == "non_consecutive":
+            await callback.answer(t("non_consecutive_error", language), show_alert=True)
+        else:
+            await callback.answer(t("slot_unavailable_error", language), show_alert=True)
+        return
+    except ValueError:
+        await callback.answer(t("slot_unavailable_error", language), show_alert=True)
+        return
+
+    if callback.message is not None:
+        await callback.message.edit_reply_markup(reply_markup=available_slots_keyboard(slots, selected_slot_ids=new_selected_ids))
+    await callback.answer(t("slot_selected" if clicked_slot_id in new_selected_ids else "slot_unselected", language), show_alert=False)
+
+
 async def handle_language_selected(callback: CallbackQuery, db_pool) -> None:
     """Persist a language selected from inline callback buttons."""
 
@@ -73,6 +114,10 @@ def create_client_router() -> Router:
     router.message.register(handle_free_slots_menu, F.text.in_(FREE_SLOTS_MENU_TEXTS))
     router.message.register(handle_language_menu, F.text.in_(LANGUAGE_MENU_TEXTS))
     router.message.register(handle_reviews_menu, F.text.in_(REVIEWS_MENU_TEXTS))
+    router.callback_query.register(
+        handle_slot_selected,
+        F.data.startswith(SLOT_CALLBACK_PREFIX),
+    )
     router.callback_query.register(
         handle_language_selected,
         F.data.startswith(LANGUAGE_CALLBACK_PREFIX),

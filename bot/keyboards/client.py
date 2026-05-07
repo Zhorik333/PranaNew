@@ -7,7 +7,7 @@ from typing import Any
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 
 from bot.i18n import t
-from bot.services.slots import SLOT_CALLBACK_PREFIX, format_slot_label
+from bot.services.slots import build_slot_callback_data, format_slot_label, slot_id
 
 LANGUAGE_LABELS = {
     "ru": "Русский",
@@ -44,13 +44,20 @@ def language_selection_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def available_slots_keyboard(slots: list[Any], *, columns: int = 3) -> InlineKeyboardMarkup:
+def available_slots_keyboard(
+    slots: list[Any],
+    *,
+    columns: int = 3,
+    selected_slot_ids: list[int] | None = None,
+) -> InlineKeyboardMarkup:
     """Build inline buttons for available slots."""
 
+    selected_ids = selected_slot_ids or []
+    selected_id_set = set(selected_ids)
     buttons = [
         InlineKeyboardButton(
-            text=format_slot_label(slot),
-            callback_data=f"{SLOT_CALLBACK_PREFIX}{slot['id'] if isinstance(slot, dict) else slot['id']}",
+            text=f"✅ {format_slot_label(slot)}" if slot_id(slot) in selected_id_set else format_slot_label(slot),
+            callback_data=build_slot_callback_data(slot_id(slot), selected_ids),
         )
         for slot in slots
     ]

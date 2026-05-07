@@ -87,8 +87,8 @@ class SlotsDisplayTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(keyboard, InlineKeyboardMarkup)
         self.assertEqual([3, 1], [len(row) for row in keyboard.inline_keyboard])
         self.assertEqual("08.05 14:00", keyboard.inline_keyboard[0][0].text)
-        self.assertEqual(f"{SLOT_CALLBACK_PREFIX}10", keyboard.inline_keyboard[0][0].callback_data)
-        self.assertEqual(f"{SLOT_CALLBACK_PREFIX}13", keyboard.inline_keyboard[1][0].callback_data)
+        self.assertEqual(f"{SLOT_CALLBACK_PREFIX}10|", keyboard.inline_keyboard[0][0].callback_data)
+        self.assertEqual(f"{SLOT_CALLBACK_PREFIX}13|", keyboard.inline_keyboard[1][0].callback_data)
 
     async def test_task_031_slots_repository_lists_only_available_future_slots(self):
         db = FakeDatabase()
