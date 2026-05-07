@@ -14,6 +14,7 @@ from aiogram.types import Message
 
 from bot.config import Config, load_config
 from bot.db import DEFAULT_POOL_FACTORY, PoolFactory, close_pool, create_pool
+from bot.i18n import t
 
 RunPollingFunc = Callable[[Bot, Dispatcher], Awaitable[None]]
 
@@ -34,7 +35,7 @@ def create_client_router() -> Router:
 
     @router.message(CommandStart())
     async def start(message: Message) -> None:
-        await message.answer("Бот PranaNew запущен. Бронирование слотов будет добавлено далее.")
+        await message.answer(t("welcome"))
 
     return router
 
