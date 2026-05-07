@@ -29,7 +29,6 @@ class UsersRepository(BaseRepository):
             SET username = EXCLUDED.username,
                 first_name = EXCLUDED.first_name,
                 last_name = EXCLUDED.last_name,
-                language = EXCLUDED.language,
                 updated_at = now()
             """,
             tg_id,
@@ -48,5 +47,31 @@ class UsersRepository(BaseRepository):
             FROM users
             WHERE tg_id = $1
             """,
+            tg_id,
+        )
+
+    async def get_language(self, tg_id: int) -> str | None:
+        """Return the saved language for a Telegram user, or None if missing."""
+
+        return await self.db.fetchval(
+            """
+            SELECT language
+            FROM users
+            WHERE tg_id = $1
+            """,
+            tg_id,
+        )
+
+    async def set_language(self, tg_id: int, language: str) -> None:
+        """Persist a user's selected language."""
+
+        await self.db.execute(
+            """
+            UPDATE users
+            SET language = $1,
+                updated_at = now()
+            WHERE tg_id = $2
+            """,
+            language,
             tg_id,
         )

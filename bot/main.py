@@ -9,12 +9,10 @@ from pathlib import Path
 from aiogram import Bot, Dispatcher, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.filters import CommandStart
-from aiogram.types import Message
 
 from bot.config import Config, load_config
 from bot.db import DEFAULT_POOL_FACTORY, PoolFactory, close_pool, create_pool
-from bot.i18n import t
+from bot.routers.client import create_client_router
 
 RunPollingFunc = Callable[[Bot, Dispatcher], Awaitable[None]]
 
@@ -27,17 +25,6 @@ def create_bot(config: Config) -> Bot:
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
 
-
-def create_client_router() -> Router:
-    """Create client-facing handlers available in the MVP runtime."""
-
-    router = Router(name="client")
-
-    @router.message(CommandStart())
-    async def start(message: Message) -> None:
-        await message.answer(t("welcome"))
-
-    return router
 
 
 def create_dispatcher(*routers: Router) -> Dispatcher:
