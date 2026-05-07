@@ -8,6 +8,9 @@ from typing import Any
 from bot.repositories.slots import SlotsRepository
 
 SLOT_CALLBACK_PREFIX = "slot:"
+BOOKING_PREVIEW_CALLBACK_PREFIX = "preview:"
+BOOKING_PREVIEW_CONFIRM_CALLBACK_PREFIX = "confirm_booking:"
+BOOKING_PREVIEW_CHANGE_CALLBACK_PREFIX = "change_booking:"
 DEFAULT_MAX_CONSECUTIVE_SLOTS = 5
 
 
@@ -32,6 +35,49 @@ def build_slot_callback_data(clicked_slot_id: int, selected_slot_ids: list[int] 
 
     selected = ",".join(str(slot_id) for slot_id in (selected_slot_ids or []))
     return f"{SLOT_CALLBACK_PREFIX}{clicked_slot_id}|{selected}"
+
+
+def _format_selected_ids(selected_slot_ids: list[int]) -> str:
+    return ",".join(str(slot_id) for slot_id in selected_slot_ids)
+
+
+def _parse_selected_ids(payload: str) -> list[int]:
+    return [int(item) for item in payload.split(",") if item]
+
+
+def build_booking_preview_callback_data(selected_slot_ids: list[int]) -> str:
+    """Build callback data for opening the booking preview screen."""
+
+    if not selected_slot_ids:
+        raise ValueError("Selected slots cannot be empty")
+    return f"{BOOKING_PREVIEW_CALLBACK_PREFIX}{_format_selected_ids(selected_slot_ids)}"
+
+
+def build_booking_preview_confirm_callback_data(selected_slot_ids: list[int]) -> str:
+    """Build callback data for future booking confirmation."""
+
+    if not selected_slot_ids:
+        raise ValueError("Selected slots cannot be empty")
+    return f"{BOOKING_PREVIEW_CONFIRM_CALLBACK_PREFIX}{_format_selected_ids(selected_slot_ids)}"
+
+
+def build_booking_preview_change_callback_data(selected_slot_ids: list[int]) -> str:
+    """Build callback data for returning from preview to slot selection."""
+
+    if not selected_slot_ids:
+        raise ValueError("Selected slots cannot be empty")
+    return f"{BOOKING_PREVIEW_CHANGE_CALLBACK_PREFIX}{_format_selected_ids(selected_slot_ids)}"
+
+
+def parse_booking_preview_callback_data(callback_data: str, *, prefix: str = BOOKING_PREVIEW_CALLBACK_PREFIX) -> list[int]:
+    """Parse preview/change/confirm callback data into selected slot ids."""
+
+    if not callback_data.startswith(prefix):
+        raise ValueError("Invalid booking preview callback data")
+    selected_slot_ids = _parse_selected_ids(callback_data.removeprefix(prefix))
+    if not selected_slot_ids:
+        raise ValueError("Selected slots cannot be empty")
+    return selected_slot_ids
 
 
 def _slot_value(slot: Any, key: str) -> Any:
@@ -118,6 +164,40 @@ def toggle_slot_selection(
         raise SlotSelectionError("non_consecutive")
 
     return [slot_id(slot) for slot in sorted(candidate_slots, key=_slot_start)]
+
+
+def selected_slots(available_slots: list[Any], selected_slot_ids: list[int]) -> list[Any]:
+    """Return selected available slots sorted by time."""
+
+    if not selected_slot_ids:
+        raise SlotSelectionError("preview_empty_selection")
+    available_by_id = {slot_id(slot): slot for slot in available_slots}
+    try:
+        slots = [available_by_id[selected_slot_id] for selected_slot_id in selected_slot_ids]
+    except KeyError as error:
+        raise SlotSelectionError("slot_unavailable") from error
+    ordered_slots = sorted(slots, key=_slot_start)
+    if not _are_consecutive(ordered_slots):
+        raise SlotSelectionError("non_consecutive")
+    return ordered_slots
+
+
+def pickup_time(available_slots: list[Any], selected_slot_ids: list[int]) -> time:
+    """Return pickup time for a selected chain: the start time of the last slot."""
+
+    last_slot = selected_slots(available_slots, selected_slot_ids)[-1]
+    return _slot_start(last_slot).time()
+
+
+def format_booking_preview_text(available_slots: list[Any], selected_slot_ids: list[int], language: str) -> str:
+    """Format selected slots and pickup time for the booking preview screen."""
+
+    from bot.i18n import t
+
+    slots = selected_slots(available_slots, selected_slot_ids)
+    slot_lines = "\n".join(f"• {format_slot_label(slot)}" for slot in slots)
+    pickup = _slot_start(slots[-1]).strftime("%H:%M")
+    return f"{t('preview_title', language)}\n\n{slot_lines}\n\n{t('pickup_time', language, time=pickup)}"
 
 
 async def list_available_slots(db, *, now: datetime | None = None) -> list[Any]:

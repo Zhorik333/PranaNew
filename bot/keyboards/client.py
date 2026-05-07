@@ -7,7 +7,14 @@ from typing import Any
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 
 from bot.i18n import t
-from bot.services.slots import build_slot_callback_data, format_slot_label, slot_id
+from bot.services.slots import (
+    build_booking_preview_callback_data,
+    build_booking_preview_change_callback_data,
+    build_booking_preview_confirm_callback_data,
+    build_slot_callback_data,
+    format_slot_label,
+    slot_id,
+)
 
 LANGUAGE_LABELS = {
     "ru": "Русский",
@@ -49,6 +56,7 @@ def available_slots_keyboard(
     *,
     columns: int = 3,
     selected_slot_ids: list[int] | None = None,
+    language: str = "ru",
 ) -> InlineKeyboardMarkup:
     """Build inline buttons for available slots."""
 
@@ -62,4 +70,25 @@ def available_slots_keyboard(
         for slot in slots
     ]
     rows = [buttons[index : index + columns] for index in range(0, len(buttons), columns)]
+    if selected_ids:
+        rows.append([InlineKeyboardButton(text=t("done", language), callback_data=build_booking_preview_callback_data(selected_ids))])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def booking_preview_keyboard(selected_slot_ids: list[int], *, language: str) -> InlineKeyboardMarkup:
+    """Build confirm/change buttons for the booking preview screen."""
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=t("confirm", language),
+                    callback_data=build_booking_preview_confirm_callback_data(selected_slot_ids),
+                ),
+                InlineKeyboardButton(
+                    text=t("change", language),
+                    callback_data=build_booking_preview_change_callback_data(selected_slot_ids),
+                ),
+            ]
+        ]
+    )

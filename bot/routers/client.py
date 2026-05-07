@@ -7,13 +7,22 @@ from aiogram.filters import CommandStart
 from aiogram.types import CallbackQuery, Message
 
 from bot.i18n import SUPPORTED_LANGUAGES, t
-from bot.keyboards.client import available_slots_keyboard, language_selection_keyboard, main_menu_keyboard
+from bot.keyboards.client import (
+    available_slots_keyboard,
+    booking_preview_keyboard,
+    language_selection_keyboard,
+    main_menu_keyboard,
+)
 from bot.services.language import ensure_user_language, get_user_language, save_user_language
 from bot.services.slots import (
+    BOOKING_PREVIEW_CALLBACK_PREFIX,
+    BOOKING_PREVIEW_CHANGE_CALLBACK_PREFIX,
     DEFAULT_MAX_CONSECUTIVE_SLOTS,
     SLOT_CALLBACK_PREFIX,
     SlotSelectionError,
+    format_booking_preview_text,
     list_available_slots,
+    parse_booking_preview_callback_data,
     parse_slot_callback_data,
     toggle_slot_selection,
 )
@@ -86,8 +95,61 @@ async def handle_slot_selected(callback: CallbackQuery, db_pool) -> None:
         return
 
     if callback.message is not None:
-        await callback.message.edit_reply_markup(reply_markup=available_slots_keyboard(slots, selected_slot_ids=new_selected_ids))
+        await callback.message.edit_reply_markup(reply_markup=available_slots_keyboard(slots, selected_slot_ids=new_selected_ids, language=language))
     await callback.answer(t("slot_selected" if clicked_slot_id in new_selected_ids else "slot_unselected", language), show_alert=False)
+
+
+async def handle_booking_preview(callback: CallbackQuery, db_pool) -> None:
+    """Show a preview of the selected slots before booking confirmation."""
+
+    tg_id = callback.from_user.id if callback.from_user is not None else 0
+    language = await get_user_language(db_pool, tg_id)
+    try:
+        selected_slot_ids = parse_booking_preview_callback_data(callback.data or "")
+        slots = await list_available_slots(db_pool)
+        preview_text = format_booking_preview_text(slots, selected_slot_ids, language)
+    except ValueError:
+        await callback.answer(t("preview_empty_selection_error", language), show_alert=True)
+        return
+    except SlotSelectionError as error:
+        error_key = str(error)
+        if error_key == "preview_empty_selection":
+            await callback.answer(t("preview_empty_selection_error", language), show_alert=True)
+        elif error_key == "non_consecutive":
+            await callback.answer(t("non_consecutive_error", language), show_alert=True)
+        else:
+            await callback.answer(t("slot_unavailable_error", language), show_alert=True)
+        return
+
+    if callback.message is not None:
+        await callback.message.edit_text(
+            preview_text,
+            reply_markup=booking_preview_keyboard(selected_slot_ids, language=language),
+        )
+    await callback.answer()
+
+
+async def handle_booking_preview_change(callback: CallbackQuery, db_pool) -> None:
+    """Return from booking preview to the slot selection screen with current selection."""
+
+    tg_id = callback.from_user.id if callback.from_user is not None else 0
+    language = await get_user_language(db_pool, tg_id)
+    try:
+        selected_slot_ids = parse_booking_preview_callback_data(
+            callback.data or "",
+            prefix=BOOKING_PREVIEW_CHANGE_CALLBACK_PREFIX,
+        )
+    except ValueError:
+        await callback.answer(t("preview_empty_selection_error", language), show_alert=True)
+        return
+
+    slots = await list_available_slots(db_pool)
+    if callback.message is not None:
+        await callback.message.edit_text(
+            t("choose_slot", language),
+            reply_markup=available_slots_keyboard(slots, selected_slot_ids=selected_slot_ids, language=language),
+        )
+    await callback.answer()
 
 
 async def handle_language_selected(callback: CallbackQuery, db_pool) -> None:
@@ -114,6 +176,14 @@ def create_client_router() -> Router:
     router.message.register(handle_free_slots_menu, F.text.in_(FREE_SLOTS_MENU_TEXTS))
     router.message.register(handle_language_menu, F.text.in_(LANGUAGE_MENU_TEXTS))
     router.message.register(handle_reviews_menu, F.text.in_(REVIEWS_MENU_TEXTS))
+    router.callback_query.register(
+        handle_booking_preview,
+        F.data.startswith(BOOKING_PREVIEW_CALLBACK_PREFIX),
+    )
+    router.callback_query.register(
+        handle_booking_preview_change,
+        F.data.startswith(BOOKING_PREVIEW_CHANGE_CALLBACK_PREFIX),
+    )
     router.callback_query.register(
         handle_slot_selected,
         F.data.startswith(SLOT_CALLBACK_PREFIX),
