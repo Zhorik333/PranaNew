@@ -28,6 +28,14 @@ from bot.services.admin_users import (
     parse_admin_user_history_command,
     parse_admin_users_command,
 )
+from bot.services.admin_schedule import (
+    AdminScheduleError,
+    AdminScheduleService,
+    format_active_date_report,
+    format_schedule_settings_report,
+    parse_set_active_date_command,
+    parse_set_schedule_command,
+)
 from bot.services.admin_slots import (
     AdminSlotError,
     AdminSlotsService,
@@ -91,6 +99,101 @@ async def handle_admin_booked_slots_menu(message: Message, config: Config) -> No
         ]
     )
     await message.answer(help_text, reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE))
+
+
+async def handle_admin_active_date_menu(message: Message, db_pool, config: Config) -> None:
+    """Show active-date and schedule-settings command help from the admin menu."""
+
+    if not is_admin_chat(message, config):
+        await message.answer(t("admin_only", ADMIN_LANGUAGE))
+        return
+    try:
+        settings = await AdminScheduleService(db_pool).get_schedule_settings()
+        report = format_schedule_settings_report(settings, language=ADMIN_LANGUAGE)
+    except AdminScheduleError:
+        report = t("admin_schedule_help", ADMIN_LANGUAGE)
+    await message.answer(
+        f"{t('admin_schedule_help', ADMIN_LANGUAGE)}\n\n{report}",
+        reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE),
+    )
+
+
+async def handle_admin_set_active_date(message: Message, db_pool, config: Config) -> None:
+    """Set the active booking date."""
+
+    if not is_admin_chat(message, config):
+        await message.answer(t("admin_only", ADMIN_LANGUAGE))
+        return
+    try:
+        active_date = parse_set_active_date_command(message.text or "")
+        await AdminScheduleService(db_pool).set_active_date(active_date)
+    except AdminScheduleError:
+        await message.answer(t("admin_schedule_command_error", ADMIN_LANGUAGE))
+        return
+    await message.answer(
+        t("admin_active_date_updated", ADMIN_LANGUAGE, active_date=active_date.isoformat()),
+        reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE),
+    )
+
+
+async def handle_admin_show_active_date(message: Message, db_pool, config: Config) -> None:
+    """Show the current active booking date."""
+
+    if not is_admin_chat(message, config):
+        await message.answer(t("admin_only", ADMIN_LANGUAGE))
+        return
+    try:
+        active_date = await AdminScheduleService(db_pool).get_active_date()
+        report = format_active_date_report(active_date, language=ADMIN_LANGUAGE)
+    except AdminScheduleError:
+        await message.answer(t("admin_schedule_command_error", ADMIN_LANGUAGE))
+        return
+    await message.answer(report, reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE))
+
+
+async def handle_admin_clear_active_date(message: Message, db_pool, config: Config) -> None:
+    """Clear the current active booking date."""
+
+    if not is_admin_chat(message, config):
+        await message.answer(t("admin_only", ADMIN_LANGUAGE))
+        return
+    await AdminScheduleService(db_pool).clear_active_date()
+    await message.answer(t("admin_active_date_cleared", ADMIN_LANGUAGE), reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE))
+
+
+async def handle_admin_set_schedule(message: Message, db_pool, config: Config) -> None:
+    """Set default schedule generation settings."""
+
+    if not is_admin_chat(message, config):
+        await message.answer(t("admin_only", ADMIN_LANGUAGE))
+        return
+    try:
+        start_at, end_at, step_minutes, capacity = parse_set_schedule_command(message.text or "")
+        await AdminScheduleService(db_pool).set_schedule(
+            start_at=start_at,
+            end_at=end_at,
+            step_minutes=step_minutes,
+            capacity=capacity,
+        )
+    except AdminScheduleError:
+        await message.answer(t("admin_schedule_command_error", ADMIN_LANGUAGE))
+        return
+    await message.answer(t("admin_schedule_updated", ADMIN_LANGUAGE), reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE))
+
+
+async def handle_admin_schedule_settings(message: Message, db_pool, config: Config) -> None:
+    """Show all current schedule settings."""
+
+    if not is_admin_chat(message, config):
+        await message.answer(t("admin_only", ADMIN_LANGUAGE))
+        return
+    try:
+        settings = await AdminScheduleService(db_pool).get_schedule_settings()
+        report = format_schedule_settings_report(settings, language=ADMIN_LANGUAGE)
+    except AdminScheduleError:
+        await message.answer(t("admin_schedule_command_error", ADMIN_LANGUAGE))
+        return
+    await message.answer(report, reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE))
 
 
 async def handle_admin_users_list(message: Message, db_pool, config: Config) -> None:
@@ -325,8 +428,14 @@ def create_admin_router() -> Router:
     router.message.register(handle_admin_users_list, Command("users"))
     router.message.register(handle_admin_user_detail, Command("user"))
     router.message.register(handle_admin_user_history, Command("user_history"))
+    router.message.register(handle_admin_set_active_date, Command("set_active_date"))
+    router.message.register(handle_admin_show_active_date, Command("active_date"))
+    router.message.register(handle_admin_clear_active_date, Command("clear_active_date"))
+    router.message.register(handle_admin_set_schedule, Command("set_schedule"))
+    router.message.register(handle_admin_schedule_settings, Command("schedule_settings"))
     router.message.register(handle_admin_generate_slots_menu, F.text == t("admin_menu_generate_slots", ADMIN_LANGUAGE))
     router.message.register(handle_admin_booked_slots_menu, F.text == t("admin_menu_booked_slots", ADMIN_LANGUAGE))
+    router.message.register(handle_admin_active_date_menu, F.text == t("admin_menu_active_date", ADMIN_LANGUAGE))
     router.callback_query.register(
         handle_booking_complete,
         F.data.startswith(BOOKING_COMPLETE_CALLBACK_PREFIX),

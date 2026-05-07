@@ -35,3 +35,14 @@ class SettingsRepository(BaseRepository):
             key,
         )
         return default if value is None else value
+
+    async def delete(self, key: str) -> None:
+        """Delete one setting if it exists."""
+
+        await self.db.execute(
+            """
+            DELETE FROM settings
+            WHERE key = $1
+            """,
+            key,
+        )
