@@ -7,8 +7,9 @@ from aiogram.filters import CommandStart
 from aiogram.types import CallbackQuery, Message
 
 from bot.i18n import SUPPORTED_LANGUAGES, t
-from bot.keyboards.client import language_selection_keyboard, main_menu_keyboard
+from bot.keyboards.client import available_slots_keyboard, language_selection_keyboard, main_menu_keyboard
 from bot.services.language import ensure_user_language, save_user_language
+from bot.services.slots import list_available_slots
 
 LANGUAGE_CALLBACK_PREFIX = "language:"
 LANGUAGE_MENU_TEXTS = {t("menu_language", language) for language in SUPPORTED_LANGUAGES}
@@ -31,10 +32,14 @@ async def handle_language_menu(message: Message, db_pool) -> None:
 
 
 async def handle_free_slots_menu(message: Message, db_pool) -> None:
-    """Open the free-slots client screen placeholder until slot listing is implemented."""
+    """Show available future slots as inline buttons."""
 
     language = await ensure_user_language(db_pool, message.from_user)
-    await message.answer(t("no_slots_available", language), reply_markup=main_menu_keyboard(language))
+    slots = await list_available_slots(db_pool)
+    if not slots:
+        await message.answer(t("no_slots_available", language), reply_markup=main_menu_keyboard(language))
+        return
+    await message.answer(t("choose_slot", language), reply_markup=available_slots_keyboard(slots))
 
 
 async def handle_reviews_menu(message: Message, db_pool) -> None:

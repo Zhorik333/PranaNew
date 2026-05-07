@@ -36,6 +36,7 @@ class FakeDatabase:
     def __init__(self):
         self.users = {}
         self.calls = []
+        self.fetch_result = []
 
     async def execute(self, query, *args):
         self.calls.append(("execute", query, args))
@@ -62,6 +63,10 @@ class FakeDatabase:
         self.calls.append(("fetchval", query, args))
         user = self.users.get(args[0])
         return None if user is None else user.get("language")
+
+    async def fetch(self, query, *args):
+        self.calls.append(("fetch", query, args))
+        return self.fetch_result
 
 
 class ClientMainMenuTest(unittest.IsolatedAsyncioTestCase):
