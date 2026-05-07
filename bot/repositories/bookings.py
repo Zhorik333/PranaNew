@@ -145,6 +145,75 @@ class BookingsRepository(BaseRepository):
             booking_id,
         )
 
+    async def list_admin_bookings(self, *, slot_date, status: str | None = None) -> list[Any]:
+        """List bookings for an admin date report, optionally filtered by status."""
+
+        return await self.db.fetch(
+            """
+            SELECT
+                b.id AS booking_id,
+                b.user_id,
+                b.status,
+                b.customer_name,
+                b.customer_phone,
+                b.comment,
+                b.pickup_time,
+                b.created_at,
+                u.username,
+                u.first_name,
+                u.last_name,
+                MIN(s.slot_date) AS slot_date,
+                string_agg(to_char(s.starts_at, 'HH24:MI'), ', ' ORDER BY s.starts_at) AS slots_label
+            FROM bookings b
+            JOIN users u ON u.tg_id = b.user_id
+            JOIN booking_slots bs ON bs.booking_id = b.id
+            JOIN slots s ON s.id = bs.slot_id
+            WHERE s.slot_date = $1
+              AND ($2::text IS NULL OR b.status = $2)
+            GROUP BY b.id, b.user_id, b.status, b.customer_name, b.customer_phone,
+                     b.comment, b.pickup_time, b.created_at,
+                     u.username, u.first_name, u.last_name
+            ORDER BY MIN(s.starts_at) ASC, b.id ASC
+            """,
+            slot_date,
+            status,
+        )
+
+    async def get_admin_booking_details(self, booking_id: int) -> Any:
+        """Return detailed booking information for admin inspection."""
+
+        return await self.db.fetchrow(
+            """
+            SELECT
+                b.id AS booking_id,
+                b.user_id,
+                b.status,
+                b.customer_name,
+                b.customer_phone,
+                b.comment,
+                b.pickup_time,
+                b.created_at,
+                b.confirmed_at,
+                b.completed_at,
+                b.cancelled_at,
+                u.username,
+                u.first_name,
+                u.last_name,
+                MIN(s.slot_date) AS slot_date,
+                string_agg(to_char(s.starts_at, 'HH24:MI'), ', ' ORDER BY s.starts_at) AS slots_label
+            FROM bookings b
+            JOIN users u ON u.tg_id = b.user_id
+            JOIN booking_slots bs ON bs.booking_id = b.id
+            JOIN slots s ON s.id = bs.slot_id
+            WHERE b.id = $1
+            GROUP BY b.id, b.user_id, b.status, b.customer_name, b.customer_phone,
+                     b.comment, b.pickup_time, b.created_at, b.confirmed_at,
+                     b.completed_at, b.cancelled_at,
+                     u.username, u.first_name, u.last_name
+            """,
+            booking_id,
+        )
+
     async def set_status(self, booking_id: int, status: str, *, cancellation_reason: str | None = None) -> None:
         """Update booking status and relevant timestamp."""
 

@@ -215,7 +215,8 @@ class AdminSlotManagementTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(t("admin_generate_slots_help", "ru"), generate_message.answers[0][0])
         self.assertIsInstance(generate_message.answers[0][1]["reply_markup"], ReplyKeyboardMarkup)
-        self.assertEqual(t("admin_booked_slots_help", "ru"), booked_message.answers[0][0])
+        self.assertIn(t("admin_booked_slots_help", "ru"), booked_message.answers[0][0])
+        self.assertIn(t("admin_bookings_help", "ru"), booked_message.answers[0][0])
         self.assertIsInstance(booked_message.answers[0][1]["reply_markup"], ReplyKeyboardMarkup)
 
 

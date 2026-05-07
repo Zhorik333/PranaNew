@@ -9,6 +9,15 @@ from aiogram.types import CallbackQuery, Message
 from bot.config import Config
 from bot.i18n import t
 from bot.keyboards.admin import admin_menu_keyboard, review_request_keyboard
+from bot.services.admin_bookings import (
+    AdminBookingError,
+    AdminBookingsService,
+    format_admin_booking_details,
+    format_admin_bookings_report,
+    parse_admin_booking_detail_command,
+    parse_admin_booking_status_command,
+    parse_admin_bookings_command,
+)
 from bot.services.admin_slots import (
     AdminSlotError,
     AdminSlotsService,
@@ -59,12 +68,67 @@ async def handle_admin_generate_slots_menu(message: Message, config: Config) -> 
 
 
 async def handle_admin_booked_slots_menu(message: Message, config: Config) -> None:
-    """Show slot list command help from the admin menu."""
+    """Show slot and booking list command help from the admin menu."""
 
     if not is_admin_chat(message, config):
         await message.answer(t("admin_only", ADMIN_LANGUAGE))
         return
-    await message.answer(t("admin_booked_slots_help", ADMIN_LANGUAGE), reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE))
+    help_text = "\n".join(
+        [
+            t("admin_booked_slots_help", ADMIN_LANGUAGE),
+            t("admin_bookings_help", ADMIN_LANGUAGE),
+        ]
+    )
+    await message.answer(help_text, reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE))
+
+
+async def handle_admin_booking_list(message: Message, db_pool, config: Config) -> None:
+    """List bookings by date and optional status."""
+
+    if not is_admin_chat(message, config):
+        await message.answer(t("admin_only", ADMIN_LANGUAGE))
+        return
+    try:
+        slot_date, status = parse_admin_bookings_command(message.text or "")
+        rows = await AdminBookingsService(db_pool).list_bookings(slot_date=slot_date, status=status)
+        report = format_admin_bookings_report(slot_date, rows, status=status, language=ADMIN_LANGUAGE)
+    except AdminBookingError:
+        await message.answer(t("admin_booking_command_error", ADMIN_LANGUAGE))
+        return
+    await message.answer(report, reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE))
+
+
+async def handle_admin_booking_detail(message: Message, db_pool, config: Config) -> None:
+    """Show one booking details by id."""
+
+    if not is_admin_chat(message, config):
+        await message.answer(t("admin_only", ADMIN_LANGUAGE))
+        return
+    try:
+        booking_id = parse_admin_booking_detail_command(message.text or "")
+        details = await AdminBookingsService(db_pool).get_booking_details(booking_id)
+    except AdminBookingError:
+        await message.answer(t("admin_booking_command_error", ADMIN_LANGUAGE))
+        return
+    await message.answer(format_admin_booking_details(details, language=ADMIN_LANGUAGE), reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE))
+
+
+async def handle_admin_booking_status(message: Message, db_pool, config: Config) -> None:
+    """Change one booking status from an admin command."""
+
+    if not is_admin_chat(message, config):
+        await message.answer(t("admin_only", ADMIN_LANGUAGE))
+        return
+    try:
+        booking_id, status = parse_admin_booking_status_command(message.text or "")
+        result = await AdminBookingsService(db_pool).set_booking_status(booking_id=booking_id, status=status)
+    except AdminBookingError:
+        await message.answer(t("admin_booking_command_error", ADMIN_LANGUAGE))
+        return
+    await message.answer(
+        t("admin_booking_status_updated", ADMIN_LANGUAGE, booking_id=result["booking_id"], status=result["status"]),
+        reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE),
+    )
 
 
 async def handle_admin_slot_generate(message: Message, db_pool, config: Config) -> None:
@@ -197,6 +261,9 @@ def create_admin_router() -> Router:
     router.message.register(handle_admin_slot_block, Command("block_slot"))
     router.message.register(handle_admin_slot_unblock, Command("unblock_slot"))
     router.message.register(handle_admin_slot_capacity, Command("set_capacity"))
+    router.message.register(handle_admin_booking_list, Command("bookings"))
+    router.message.register(handle_admin_booking_detail, Command("booking"))
+    router.message.register(handle_admin_booking_status, Command("booking_status"))
     router.message.register(handle_admin_generate_slots_menu, F.text == t("admin_menu_generate_slots", ADMIN_LANGUAGE))
     router.message.register(handle_admin_booked_slots_menu, F.text == t("admin_menu_booked_slots", ADMIN_LANGUAGE))
     router.callback_query.register(
