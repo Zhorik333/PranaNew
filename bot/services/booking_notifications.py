@@ -58,17 +58,37 @@ def _client_label(details: Any) -> str:
     return f"ID {int(_value(details, 'user_id'))}"
 
 
-def format_admin_new_booking_message(details: Any, *, language: str) -> str:
-    """Format a compact admin-group message for a newly confirmed booking."""
-
+def _format_admin_booking_event_message(details: Any, *, language: str, title_key: str, icon: str) -> str:
     booking_id = int(_value(details, "booking_id"))
     return "\n".join(
         [
-            f"🆕 {t('admin_new_booking', language)}",
+            f"{icon} {t(title_key, language)}",
             f"Бронь: #{booking_id}",
             f"Клиент: {_client_label(details)}",
             f"Дата: {_format_date(_value(details, 'slot_date'))}",
             f"Слоты: {_value(details, 'slots_label')}",
             f"Выдача: {_format_time(_value(details, 'pickup_time'))}",
         ]
+    )
+
+
+def format_admin_new_booking_message(details: Any, *, language: str) -> str:
+    """Format a compact admin-group message for a newly confirmed booking."""
+
+    return _format_admin_booking_event_message(
+        details,
+        language=language,
+        title_key="admin_new_booking",
+        icon="🆕",
+    )
+
+
+def format_admin_booking_cancelled_message(details: Any, *, language: str) -> str:
+    """Format a compact admin-group message for a client-side cancellation."""
+
+    return _format_admin_booking_event_message(
+        details,
+        language=language,
+        title_key="admin_booking_cancelled",
+        icon="❌",
     )

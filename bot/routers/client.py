@@ -15,7 +15,10 @@ from bot.keyboards.client import (
     language_selection_keyboard,
     main_menu_keyboard,
 )
-from bot.services.booking_notifications import format_admin_new_booking_message
+from bot.services.booking_notifications import (
+    format_admin_booking_cancelled_message,
+    format_admin_new_booking_message,
+)
 from bot.services.bookings import BookingCancellationError, BookingCreationError, BookingService
 from bot.services.language import ensure_user_language, get_user_language, save_user_language
 from bot.services.slots import (
@@ -209,20 +212,36 @@ async def handle_booking_confirm(callback: CallbackQuery, db_pool, config=None) 
     await callback.answer()
 
 
-async def handle_booking_cancel(callback: CallbackQuery, db_pool) -> None:
+async def handle_booking_cancel(callback: CallbackQuery, db_pool, config=None) -> None:
     """Cancel an active booking owned by the current user."""
 
     tg_id = callback.from_user.id if callback.from_user is not None else 0
     language = await get_user_language(db_pool, tg_id)
+    booking_service = BookingService(db_pool)
     try:
         booking_id = parse_booking_cancel_callback_data(callback.data or "")
-        await BookingService(db_pool).cancel_booking(user_id=tg_id, booking_id=booking_id)
+        details = None
+        if config is not None and getattr(callback, "bot", None) is not None:
+            try:
+                details = await booking_service.get_admin_notification_details(booking_id=booking_id)
+            except Exception:
+                details = None
+        changed = await booking_service.cancel_booking(user_id=tg_id, booking_id=booking_id)
     except (ValueError, BookingCancellationError):
         await callback.answer(t("booking_cancel_unavailable", language), show_alert=True)
         return
 
     if callback.message is not None:
         await callback.message.edit_text(t("booking_cancelled", language, booking_id=booking_id))
+    bot = getattr(callback, "bot", None)
+    if changed and details is not None and config is not None and bot is not None:
+        try:
+            await bot.send_message(
+                config.admin_chat_id,
+                format_admin_booking_cancelled_message(details, language="ru"),
+            )
+        except Exception:
+            pass
     await callback.answer()
 
 
