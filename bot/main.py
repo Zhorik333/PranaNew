@@ -13,6 +13,7 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message
 
 from bot.config import Config, load_config
+from bot.db import DEFAULT_POOL_FACTORY, PoolFactory, close_pool, create_pool
 
 RunPollingFunc = Callable[[Bot, Dispatcher], Awaitable[None]]
 
@@ -57,16 +58,44 @@ async def run_polling(bot: Bot, dispatcher: Dispatcher) -> None:
     await dispatcher.start_polling(bot)
 
 
+async def run_application(
+    config: Config,
+    *,
+    run_polling_func: RunPollingFunc = run_polling,
+    pool_factory: PoolFactory = DEFAULT_POOL_FACTORY,
+) -> None:
+    """Create runtime resources, run polling, and close resources on shutdown."""
+
+    bot = create_bot(config)
+    dispatcher = create_dispatcher()
+    pool = None
+
+    try:
+        pool = await create_pool(config.database_url, pool_factory=pool_factory)
+        dispatcher.workflow_data["db_pool"] = pool
+        await run_polling_func(bot, dispatcher)
+    finally:
+        try:
+            await close_pool(pool)
+        finally:
+            await bot.session.close()
+
+
 def main(
     env_path: str | Path = ".env",
     run_polling_func: RunPollingFunc = run_polling,
+    pool_factory: PoolFactory = DEFAULT_POOL_FACTORY,
 ) -> None:
     """CLI entrypoint used by `python -m bot.main`."""
 
     config = load_config(env_path)
-    bot = create_bot(config)
-    dispatcher = create_dispatcher()
-    asyncio.run(run_polling_func(bot, dispatcher))
+    asyncio.run(
+        run_application(
+            config,
+            run_polling_func=run_polling_func,
+            pool_factory=pool_factory,
+        )
+    )
 
 
 if __name__ == "__main__":
