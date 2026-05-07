@@ -6,6 +6,11 @@ from datetime import datetime, time, timedelta, timezone
 from typing import Any
 
 from bot.repositories.slots import SlotsRepository
+from bot.services.booking_validation import (
+    BookingValidationError,
+    calculate_last_slot_time as calculate_validated_last_slot_time,
+    validate_slot_selection,
+)
 
 SLOT_CALLBACK_PREFIX = "slot:"
 BOOKING_PREVIEW_CALLBACK_PREFIX = "preview:"
@@ -160,13 +165,22 @@ def toggle_slot_selection(
         raise SlotSelectionError("max_consecutive")
 
     candidate_slots = [available_by_id[slot_id] for slot_id in candidate_ids]
-    if not _are_consecutive(candidate_slots):
-        raise SlotSelectionError("non_consecutive")
+    if not candidate_slots:
+        return []
+    try:
+        ordered_slots = validate_slot_selection(candidate_slots, max_consecutive=max_consecutive)
+    except BookingValidationError as error:
+        raise SlotSelectionError(str(error)) from error
 
-    return [slot_id(slot) for slot in sorted(candidate_slots, key=_slot_start)]
+    return [slot_id(slot) for slot in ordered_slots]
 
 
-def selected_slots(available_slots: list[Any], selected_slot_ids: list[int]) -> list[Any]:
+def selected_slots(
+    available_slots: list[Any],
+    selected_slot_ids: list[int],
+    *,
+    max_consecutive: int = DEFAULT_MAX_CONSECUTIVE_SLOTS,
+) -> list[Any]:
     """Return selected available slots sorted by time."""
 
     if not selected_slot_ids:
@@ -176,17 +190,18 @@ def selected_slots(available_slots: list[Any], selected_slot_ids: list[int]) -> 
         slots = [available_by_id[selected_slot_id] for selected_slot_id in selected_slot_ids]
     except KeyError as error:
         raise SlotSelectionError("slot_unavailable") from error
-    ordered_slots = sorted(slots, key=_slot_start)
-    if not _are_consecutive(ordered_slots):
-        raise SlotSelectionError("non_consecutive")
-    return ordered_slots
+    try:
+        return validate_slot_selection(slots, max_consecutive=max_consecutive)
+    except BookingValidationError as error:
+        error_key = "preview_empty_selection" if str(error) == "empty_selection" else str(error)
+        raise SlotSelectionError(error_key) from error
 
 
 def pickup_time(available_slots: list[Any], selected_slot_ids: list[int]) -> time:
     """Return pickup time for a selected chain: the start time of the last slot."""
 
-    last_slot = selected_slots(available_slots, selected_slot_ids)[-1]
-    return _slot_start(last_slot).time()
+    slots = selected_slots(available_slots, selected_slot_ids)
+    return calculate_validated_last_slot_time(slots)
 
 
 def format_booking_preview_text(available_slots: list[Any], selected_slot_ids: list[int], language: str) -> str:

@@ -108,17 +108,22 @@ async def handle_booking_preview(callback: CallbackQuery, db_pool) -> None:
         selected_slot_ids = parse_booking_preview_callback_data(callback.data or "")
         slots = await list_available_slots(db_pool)
         preview_text = format_booking_preview_text(slots, selected_slot_ids, language)
-    except ValueError:
-        await callback.answer(t("preview_empty_selection_error", language), show_alert=True)
-        return
     except SlotSelectionError as error:
         error_key = str(error)
-        if error_key == "preview_empty_selection":
+        if error_key in {"preview_empty_selection", "empty_selection"}:
             await callback.answer(t("preview_empty_selection_error", language), show_alert=True)
+        elif error_key == "max_consecutive":
+            await callback.answer(
+                t("max_consecutive_error", language, max_slots=DEFAULT_MAX_CONSECUTIVE_SLOTS),
+                show_alert=True,
+            )
         elif error_key == "non_consecutive":
             await callback.answer(t("non_consecutive_error", language), show_alert=True)
         else:
             await callback.answer(t("slot_unavailable_error", language), show_alert=True)
+        return
+    except ValueError:
+        await callback.answer(t("preview_empty_selection_error", language), show_alert=True)
         return
 
     if callback.message is not None:

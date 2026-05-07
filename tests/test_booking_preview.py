@@ -142,6 +142,23 @@ class BookingPreviewTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(t("confirm", "ru"), markup.inline_keyboard[0][0].text)
         self.assertEqual(f"{BOOKING_PREVIEW_CHANGE_CALLBACK_PREFIX}10,11", markup.inline_keyboard[0][1].callback_data)
 
+    async def test_task_045_preview_callback_alerts_when_selection_exceeds_limit(self):
+        db = FakeDatabase()
+        db.fetch_result = [
+            slot(10, 14, 0),
+            slot(11, 14, 10),
+            slot(12, 14, 20),
+            slot(13, 14, 30),
+            slot(14, 14, 40),
+            slot(15, 14, 50),
+        ]
+        callback = FakeCallback(data=f"{BOOKING_PREVIEW_CALLBACK_PREFIX}10,11,12,13,14,15")
+
+        await handle_booking_preview(callback, db_pool=db)
+
+        self.assertEqual((t("max_consecutive_error", "ru", max_slots=5), {"show_alert": True}), callback.answers[0])
+        self.assertEqual([], callback.message.edited_texts)
+
     async def test_task_033_change_callback_returns_to_slot_selection_with_same_selection(self):
         db = FakeDatabase()
         db.fetch_result = [slot(10, 14, 0), slot(11, 14, 10), slot(12, 14, 20)]
