@@ -19,6 +19,7 @@ from bot.services.booking_notifications import (
     format_admin_booking_cancelled_message,
     format_admin_new_booking_message,
 )
+from bot.services.admin_i18n import translate_with_overrides
 from bot.services.bookings import BookingCancellationError, BookingCreationError, BookingService
 from bot.services.language import ensure_user_language, get_user_language, save_user_language
 from bot.services.slots import (
@@ -47,7 +48,8 @@ async def handle_start(message: Message, db_pool) -> None:
     """Create a user if needed and greet them in the saved language."""
 
     language = await ensure_user_language(db_pool, message.from_user)
-    await message.answer(t("welcome", language), reply_markup=main_menu_keyboard(language))
+    welcome_text = await translate_with_overrides(db_pool, "welcome", language)
+    await message.answer(welcome_text, reply_markup=main_menu_keyboard(language))
 
 
 async def handle_language_menu(message: Message, db_pool) -> None:

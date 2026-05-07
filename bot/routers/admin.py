@@ -18,6 +18,14 @@ from bot.services.admin_bookings import (
     parse_admin_booking_status_command,
     parse_admin_bookings_command,
 )
+from bot.services.admin_i18n import (
+    AdminI18nError,
+    AdminI18nService,
+    format_i18n_text_report,
+    parse_clear_text_command,
+    parse_get_text_command,
+    parse_set_text_command,
+)
 from bot.services.admin_users import (
     AdminUserError,
     AdminUsersService,
@@ -194,6 +202,61 @@ async def handle_admin_schedule_settings(message: Message, db_pool, config: Conf
         await message.answer(t("admin_schedule_command_error", ADMIN_LANGUAGE))
         return
     await message.answer(report, reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE))
+
+
+async def handle_admin_i18n_menu(message: Message, db_pool, config: Config) -> None:
+    """Show text editing command help from the admin menu."""
+
+    if not is_admin_chat(message, config):
+        await message.answer(t("admin_only", ADMIN_LANGUAGE))
+        return
+    await message.answer(t("admin_i18n_help", ADMIN_LANGUAGE), reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE))
+
+
+async def handle_admin_set_text(message: Message, db_pool, config: Config) -> None:
+    """Set a custom i18n text override."""
+
+    if not is_admin_chat(message, config):
+        await message.answer(t("admin_only", ADMIN_LANGUAGE))
+        return
+    try:
+        language, key, value = parse_set_text_command(message.text or "")
+        await AdminI18nService(db_pool).set_text(language, key, value)
+    except AdminI18nError:
+        await message.answer(t("admin_i18n_command_error", ADMIN_LANGUAGE))
+        return
+    await message.answer(t("admin_i18n_text_updated", ADMIN_LANGUAGE), reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE))
+
+
+async def handle_admin_get_text(message: Message, db_pool, config: Config) -> None:
+    """Show a custom i18n text override or dictionary fallback."""
+
+    if not is_admin_chat(message, config):
+        await message.answer(t("admin_only", ADMIN_LANGUAGE))
+        return
+    try:
+        language, key = parse_get_text_command(message.text or "")
+        row = await AdminI18nService(db_pool).get_text(language, key)
+        report = format_i18n_text_report(row, language=language, key=key, text=t(key, language))
+    except AdminI18nError:
+        await message.answer(t("admin_i18n_command_error", ADMIN_LANGUAGE))
+        return
+    await message.answer(report, reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE))
+
+
+async def handle_admin_clear_text(message: Message, db_pool, config: Config) -> None:
+    """Clear one custom i18n text override."""
+
+    if not is_admin_chat(message, config):
+        await message.answer(t("admin_only", ADMIN_LANGUAGE))
+        return
+    try:
+        language, key = parse_clear_text_command(message.text or "")
+        await AdminI18nService(db_pool).clear_text(language, key)
+    except AdminI18nError:
+        await message.answer(t("admin_i18n_command_error", ADMIN_LANGUAGE))
+        return
+    await message.answer(t("admin_i18n_text_cleared", ADMIN_LANGUAGE), reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE))
 
 
 async def handle_admin_users_list(message: Message, db_pool, config: Config) -> None:
@@ -433,9 +496,13 @@ def create_admin_router() -> Router:
     router.message.register(handle_admin_clear_active_date, Command("clear_active_date"))
     router.message.register(handle_admin_set_schedule, Command("set_schedule"))
     router.message.register(handle_admin_schedule_settings, Command("schedule_settings"))
+    router.message.register(handle_admin_set_text, Command("set_text"))
+    router.message.register(handle_admin_get_text, Command("get_text"))
+    router.message.register(handle_admin_clear_text, Command("clear_text"))
     router.message.register(handle_admin_generate_slots_menu, F.text == t("admin_menu_generate_slots", ADMIN_LANGUAGE))
     router.message.register(handle_admin_booked_slots_menu, F.text == t("admin_menu_booked_slots", ADMIN_LANGUAGE))
     router.message.register(handle_admin_active_date_menu, F.text == t("admin_menu_active_date", ADMIN_LANGUAGE))
+    router.message.register(handle_admin_i18n_menu, F.text == t("admin_menu_i18n", ADMIN_LANGUAGE))
     router.callback_query.register(
         handle_booking_complete,
         F.data.startswith(BOOKING_COMPLETE_CALLBACK_PREFIX),

@@ -42,6 +42,7 @@ class AdminEntryTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(t("admin_menu_booked_slots", language))
             self.assertTrue(t("admin_menu_active_date", language))
             self.assertTrue(t("admin_menu_reviews", language))
+            self.assertTrue(t("admin_menu_i18n", language))
 
     def test_task_070_admin_menu_keyboard_is_persistent_and_compact(self):
         keyboard = admin_menu_keyboard(language="ru")
@@ -54,6 +55,7 @@ class AdminEntryTest(unittest.IsolatedAsyncioTestCase):
             [
                 [t("admin_menu_generate_slots", "ru"), t("admin_menu_booked_slots", "ru")],
                 [t("admin_menu_active_date", "ru"), t("admin_menu_reviews", "ru")],
+                [t("admin_menu_i18n", "ru")],
             ],
             labels,
         )

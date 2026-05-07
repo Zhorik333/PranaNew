@@ -24,6 +24,7 @@ def admin_menu_keyboard(language: str = ADMIN_MENU_LANGUAGE) -> ReplyKeyboardMar
                 KeyboardButton(text=t("admin_menu_active_date", language)),
                 KeyboardButton(text=t("admin_menu_reviews", language)),
             ],
+            [KeyboardButton(text=t("admin_menu_i18n", language))],
         ],
         resize_keyboard=True,
         is_persistent=True,
