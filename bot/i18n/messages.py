@@ -28,6 +28,7 @@ REQUIRED_KEYS = (
     "booking_confirmed",
     "review_request",
     "review_saved",
+    "reviews_unavailable",
 )
 
 MESSAGES: Mapping[str, Mapping[str, str]] = {
@@ -51,6 +52,7 @@ MESSAGES: Mapping[str, Mapping[str, str]] = {
         "booking_confirmed": "Бронь подтверждена.",
         "review_request": "Как вам заказ? Оставьте отзыв, пожалуйста.",
         "review_saved": "Спасибо! Отзыв сохранён.",
+        "reviews_unavailable": "Раздел отзывов скоро будет доступен.",
     },
     "en": {
         "welcome": "Welcome to PranaNew. Choose an action from the menu.",
@@ -72,6 +74,7 @@ MESSAGES: Mapping[str, Mapping[str, str]] = {
         "booking_confirmed": "Booking confirmed.",
         "review_request": "How was your order? Please leave a review.",
         "review_saved": "Thank you! Your review has been saved.",
+        "reviews_unavailable": "The reviews section will be available soon.",
     },
     "sr": {
         "welcome": "Dobrodošli u PranaNew. Izaberite akciju iz menija.",
@@ -93,6 +96,7 @@ MESSAGES: Mapping[str, Mapping[str, str]] = {
         "booking_confirmed": "Rezervacija je potvrđena.",
         "review_request": "Kako vam se dopala porudžbina? Ostavite recenziju, molimo.",
         "review_saved": "Hvala! Recenzija je sačuvana.",
+        "reviews_unavailable": "Odeljak za recenzije uskoro će biti dostupan.",
     },
 }
 
