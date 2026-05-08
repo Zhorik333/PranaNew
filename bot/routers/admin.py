@@ -9,6 +9,12 @@ from aiogram.types import CallbackQuery, Message
 from bot.config import Config
 from bot.i18n import t
 from bot.keyboards.admin import admin_menu_keyboard, review_request_keyboard
+from bot.services.analytics import (
+    AnalyticsError,
+    AnalyticsService,
+    format_admin_analytics_report,
+    parse_admin_analytics_command,
+)
 from bot.services.admin_bookings import (
     AdminBookingError,
     AdminBookingsService,
@@ -374,6 +380,22 @@ async def handle_admin_user_history(message: Message, db_pool, config: Config) -
     await message.answer(report, reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE))
 
 
+async def handle_admin_analytics_report(message: Message, db_pool, config: Config) -> None:
+    """Show a simple daily analytics report."""
+
+    if not is_admin_chat(message, config):
+        await message.answer(t("admin_only", ADMIN_LANGUAGE))
+        return
+    try:
+        slot_date = parse_admin_analytics_command(message.text or "")
+        row = await AnalyticsService(db_pool).get_daily_report(slot_date=slot_date)
+        report = format_admin_analytics_report(row, language=ADMIN_LANGUAGE)
+    except AnalyticsError:
+        await message.answer(t("admin_analytics_command_error", ADMIN_LANGUAGE))
+        return
+    await message.answer(report, reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE))
+
+
 async def handle_admin_booking_list(message: Message, db_pool, config: Config) -> None:
     """List bookings by date and optional status."""
 
@@ -559,6 +581,7 @@ def create_admin_router() -> Router:
     router.message.register(handle_admin_users_list, Command("users"))
     router.message.register(handle_admin_user_detail, Command("user"))
     router.message.register(handle_admin_user_history, Command("user_history"))
+    router.message.register(handle_admin_analytics_report, Command("analytics"))
     router.message.register(handle_admin_set_active_date, Command("set_active_date"))
     router.message.register(handle_admin_show_active_date, Command("active_date"))
     router.message.register(handle_admin_clear_active_date, Command("clear_active_date"))

@@ -96,6 +96,15 @@ CREATE TABLE scheduler_jobs (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE analytics_events (
+    id BIGSERIAL PRIMARY KEY,
+    event_type TEXT NOT NULL
+        CHECK (event_type IN ('free_slots_view', 'booking_created', 'booking_cancelled', 'booking_completed')),
+    user_id BIGINT REFERENCES users(tg_id),
+    booking_id BIGINT REFERENCES bookings(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE INDEX idx_slots_date_starts_at ON slots (slot_date, starts_at);
 CREATE INDEX idx_slots_blocked_date ON slots (is_blocked, slot_date);
 CREATE INDEX idx_booking_slots_slot_id ON booking_slots (slot_id);
@@ -103,3 +112,4 @@ CREATE INDEX idx_bookings_user_id_status ON bookings (user_id, status);
 CREATE INDEX idx_bookings_status_created_at ON bookings (status, created_at);
 CREATE INDEX idx_reviews_status_created_at ON reviews (status, created_at);
 CREATE INDEX idx_scheduler_jobs_status_run_at ON scheduler_jobs (status, run_at);
+CREATE INDEX idx_analytics_events_type_created_at ON analytics_events (event_type, created_at);

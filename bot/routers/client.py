@@ -23,6 +23,7 @@ from bot.services.booking_notifications import (
     format_admin_new_booking_message,
 )
 from bot.services.admin_i18n import translate_with_overrides
+from bot.services.analytics import AnalyticsService
 from bot.services.bookings import BookingCancellationError, BookingCreationError, BookingService, REVIEW_REQUEST_CALLBACK_PREFIX
 from bot.services.language import ensure_user_language, get_user_language, save_user_language
 from bot.services.settings import SettingsService
@@ -91,6 +92,8 @@ async def handle_free_slots_menu(message: Message, db_pool) -> None:
     """Show available future slots as inline buttons."""
 
     language = await ensure_user_language(db_pool, message.from_user)
+    tg_id = message.from_user.id if message.from_user is not None else None
+    await AnalyticsService(db_pool).record_free_slots_view(user_id=tg_id)
     slots = await list_available_slots(db_pool)
     if not slots:
         await message.answer(t("no_slots_available", language), reply_markup=main_menu_keyboard(language))

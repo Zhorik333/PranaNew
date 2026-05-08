@@ -111,6 +111,9 @@ REQUIRED_KEYS = (
     "published_reviews_empty",
     "public_reviews_more",
     "reviews_unavailable",
+    "admin_analytics_help",
+    "admin_analytics_report_title",
+    "admin_analytics_command_error",
 )
 
 MESSAGES: Mapping[str, Mapping[str, str]] = {
@@ -217,6 +220,9 @@ MESSAGES: Mapping[str, Mapping[str, str]] = {
         "published_reviews_empty": "Пока опубликованных отзывов нет.",
         "public_reviews_more": "Ещё отзывы",
         "reviews_unavailable": "Раздел отзывов скоро будет доступен.",
+        "admin_analytics_help": "Команда: /analytics 2026-05-08",
+        "admin_analytics_report_title": "Аналитика за {slot_date}:",
+        "admin_analytics_command_error": "Неверная команда аналитики. Используйте /analytics YYYY-MM-DD.",
     },
     "en": {
         "welcome": "Welcome to PranaNew. Choose an action from the menu.",
@@ -321,6 +327,9 @@ MESSAGES: Mapping[str, Mapping[str, str]] = {
         "published_reviews_empty": "There are no published reviews yet.",
         "public_reviews_more": "More reviews",
         "reviews_unavailable": "The reviews section will be available soon.",
+        "admin_analytics_help": "Command: /analytics 2026-05-08",
+        "admin_analytics_report_title": "Analytics for {slot_date}:",
+        "admin_analytics_command_error": "Invalid analytics command. Use /analytics YYYY-MM-DD.",
     },
     "sr": {
         "welcome": "Dobrodošli u PranaNew. Izaberite akciju iz menija.",
@@ -425,6 +434,9 @@ MESSAGES: Mapping[str, Mapping[str, str]] = {
         "published_reviews_empty": "Još nema objavljenih recenzija.",
         "public_reviews_more": "Još recenzija",
         "reviews_unavailable": "Odeljak za recenzije uskoro će biti dostupan.",
+        "admin_analytics_help": "Komanda: /analytics 2026-05-08",
+        "admin_analytics_report_title": "Analitika za {slot_date}:",
+        "admin_analytics_command_error": "Neispravna komanda analitike. Koristite /analytics YYYY-MM-DD.",
     },
 }
 
