@@ -167,7 +167,7 @@ class RepositoryLayerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((77, 42, "Great pizza", 5), db.calls[0][2])
         self.assertIn("WHERE r.status = 'published'", db.calls[1][1])
         self.assertIn("LEFT JOIN users", db.calls[1][1])
-        self.assertEqual((10,), db.calls[1][2])
+        self.assertEqual((10, 0), db.calls[1][2])
 
     def test_task_008_telegram_runtime_does_not_embed_repository_sql(self):
         runtime_files = [

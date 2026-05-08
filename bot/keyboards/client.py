@@ -7,6 +7,7 @@ from typing import Any
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 
 from bot.i18n import t
+from bot.services.reviews import build_public_reviews_more_callback_data
 from bot.services.slots import (
     build_booking_preview_callback_data,
     build_booking_preview_change_callback_data,
@@ -74,6 +75,23 @@ def available_slots_keyboard(
     if selected_ids:
         rows.append([InlineKeyboardButton(text=t("done", language), callback_data=build_booking_preview_callback_data(selected_ids))])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def public_reviews_keyboard(*, next_page: int | None, language: str) -> InlineKeyboardMarkup | None:
+    """Build pagination controls for published reviews."""
+
+    if next_page is None:
+        return None
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=t("public_reviews_more", language),
+                    callback_data=build_public_reviews_more_callback_data(next_page),
+                )
+            ]
+        ]
+    )
 
 
 def booking_preview_keyboard(selected_slot_ids: list[int], *, language: str) -> InlineKeyboardMarkup:

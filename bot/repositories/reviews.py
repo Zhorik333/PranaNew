@@ -60,7 +60,7 @@ class ReviewsRepository(BaseRepository):
             rating,
         )
 
-    async def list_published(self, *, limit: int = 10) -> list[Any]:
+    async def list_published(self, *, limit: int = 10, offset: int = 0) -> list[Any]:
         """Return the newest published reviews with user labels."""
 
         return await self.db.fetch(
@@ -72,8 +72,10 @@ class ReviewsRepository(BaseRepository):
             WHERE r.status = 'published'
             ORDER BY r.created_at DESC
             LIMIT $1
+            OFFSET $2
             """,
             limit,
+            offset,
         )
 
     async def list_for_moderation(self, *, status: str = "pending", limit: int = 10) -> list[Any]:

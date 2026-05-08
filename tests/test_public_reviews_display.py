@@ -3,8 +3,14 @@ from datetime import datetime, timezone
 
 from bot.i18n import SUPPORTED_LANGUAGES, t
 from bot.repositories.reviews import ReviewsRepository
-from bot.routers.client import handle_reviews_menu
-from bot.services.reviews import PublicReviewsService, format_public_reviews_report
+from bot.routers.client import handle_public_reviews_more, handle_reviews_menu
+from bot.services.reviews import (
+    PUBLIC_REVIEWS_MORE_CALLBACK_PREFIX,
+    PublicReviewsService,
+    build_public_reviews_more_callback_data,
+    format_public_reviews_report,
+    parse_public_reviews_more_callback_data,
+)
 
 
 class FakeUser:
@@ -21,9 +27,24 @@ class FakeMessage:
         self.text = text
         self.from_user = user or FakeUser()
         self.answers = []
+        self.edits = []
 
     async def answer(self, text, reply_markup=None, **kwargs):
         self.answers.append((text, reply_markup, kwargs))
+
+    async def edit_text(self, text, reply_markup=None, **kwargs):
+        self.edits.append((text, reply_markup, kwargs))
+
+
+class FakeCallback:
+    def __init__(self, data, user=None, message=None):
+        self.data = data
+        self.from_user = user or FakeUser()
+        self.message = message or FakeMessage(user=self.from_user)
+        self.answers = []
+
+    async def answer(self, text=None, show_alert=False, **kwargs):
+        self.answers.append((text, show_alert, kwargs))
 
 
 class FakeAcquire:
@@ -65,7 +86,9 @@ class FakeDatabase:
 
     async def fetch(self, query, *args):
         self.calls.append(("fetch", query, args))
-        return self.reviews
+        limit = int(args[0]) if args else len(self.reviews)
+        offset = int(args[1]) if len(args) > 1 else 0
+        return self.reviews[offset : offset + limit]
 
     async def fetchrow(self, query, *args):
         self.calls.append(("fetchrow", query, args))
@@ -114,7 +137,7 @@ class PublicReviewsDisplayTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("LEFT JOIN users", query)
         self.assertIn("concat_ws", query)
         self.assertIn("ORDER BY r.created_at DESC", query)
-        self.assertEqual((7,), db.calls[-1][2])
+        self.assertEqual((7, 0), db.calls[-1][2])
 
     async def test_task_082_service_lists_published_reviews_with_limit_cap(self):
         db = FakeDatabase()
@@ -124,6 +147,43 @@ class PublicReviewsDisplayTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(db.reviews, rows)
         self.assertEqual(20, db.calls[-1][2][0])
+
+    async def test_task_083_repository_lists_published_reviews_with_offset(self):
+        db = FakeDatabase()
+        repo = ReviewsRepository(db)
+
+        await repo.list_published(limit=5, offset=10)
+
+        query = db.calls[-1][1]
+        self.assertIn("OFFSET $2", query)
+        self.assertEqual((5, 10), db.calls[-1][2])
+
+    async def test_task_083_service_uses_page_size_plus_one_to_detect_more_reviews(self):
+        db = FakeDatabase()
+        db.reviews = [public_review_row(id=i, text=f"review {i}", username=f"client{i}") for i in range(25)]
+        service = PublicReviewsService(FakePool(db))
+
+        page = await service.list_published_page(page=2, page_size=10)
+
+        self.assertEqual(2, page.page)
+        self.assertEqual(10, len(page.reviews))
+        self.assertTrue(page.has_next)
+        self.assertEqual(3, page.next_page)
+        self.assertEqual((11, 10), db.calls[-1][2])
+
+    def test_task_083_more_reviews_callback_data_is_strictly_parsed(self):
+        self.assertEqual(2, parse_public_reviews_more_callback_data("reviews_more:2"))
+        self.assertEqual("reviews_more:3", build_public_reviews_more_callback_data(3))
+        with self.assertRaises(ValueError):
+            parse_public_reviews_more_callback_data("reviews_more:0")
+        with self.assertRaises(ValueError):
+            parse_public_reviews_more_callback_data("reviews_more:abc")
+        with self.assertRaises(ValueError):
+            parse_public_reviews_more_callback_data("other:2")
+        for malformed in ("reviews_more:", "reviews_more:+2", "reviews_more: 2", "reviews_more:02", "reviews_more:2:extra"):
+            with self.subTest(malformed=malformed):
+                with self.assertRaises(ValueError):
+                    parse_public_reviews_more_callback_data(malformed)
 
     def test_task_082_formats_public_reviews_with_html_escaping(self):
         text = format_public_reviews_report(
@@ -174,6 +234,43 @@ class PublicReviewsDisplayTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Очень вкусно &lt;спасибо&gt;", answer_text)
         self.assertIsNotNone(reply_markup)
 
+    async def test_task_083_reviews_menu_adds_more_button_when_next_page_exists(self):
+        db = FakeDatabase()
+        db.reviews = [public_review_row(id=i, text=f"review {i}", username=f"client{i}") for i in range(11)]
+        msg = FakeMessage(text=t("menu_reviews", "ru"))
+
+        await handle_reviews_menu(msg, FakePool(db))
+
+        answer_text, reply_markup, kwargs = msg.answers[-1]
+        self.assertIn("review 0", answer_text)
+        more_button = reply_markup.inline_keyboard[-1][0]
+        self.assertEqual(t("public_reviews_more", "ru"), more_button.text)
+        self.assertEqual("reviews_more:2", more_button.callback_data)
+
+    async def test_task_083_more_reviews_callback_edits_next_page(self):
+        db = FakeDatabase()
+        db.reviews = [public_review_row(id=i, text=f"review {i}", username=f"client{i}") for i in range(25)]
+        callback = FakeCallback("reviews_more:2")
+
+        await handle_public_reviews_more(callback, FakePool(db))
+
+        self.assertEqual(1, len(callback.message.edits))
+        answer_text, reply_markup, kwargs = callback.message.edits[-1]
+        self.assertIn("review 10", answer_text)
+        self.assertNotIn("review 0", answer_text)
+        self.assertEqual("reviews_more:3", reply_markup.inline_keyboard[-1][0].callback_data)
+        self.assertEqual((None, False, {}), callback.answers[-1])
+
+    async def test_task_083_invalid_more_reviews_callback_answers_alert(self):
+        db = FakeDatabase()
+        callback = FakeCallback("reviews_more:oops")
+
+        await handle_public_reviews_more(callback, FakePool(db))
+
+        self.assertEqual(0, len(callback.message.edits))
+        self.assertEqual(t("published_reviews_empty", "ru"), callback.answers[-1][0])
+        self.assertTrue(callback.answers[-1][1])
+
     async def test_task_082_reviews_menu_shows_empty_message(self):
         db = FakeDatabase()
         db.reviews = []
@@ -187,3 +284,4 @@ class PublicReviewsDisplayTest(unittest.IsolatedAsyncioTestCase):
         for language in SUPPORTED_LANGUAGES:
             self.assertTrue(t("published_reviews_title", language))
             self.assertTrue(t("published_reviews_empty", language))
+            self.assertTrue(t("public_reviews_more", language))

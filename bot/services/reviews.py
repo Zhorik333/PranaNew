@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime
 from html import escape
 from typing import Any
@@ -15,6 +16,24 @@ MAX_PUBLIC_REVIEWS_LIMIT = 20
 MAX_PUBLIC_REVIEW_TEXT_LENGTH = 500
 MAX_PUBLIC_REVIEW_AUTHOR_LENGTH = 80
 MAX_PUBLIC_REVIEWS_MESSAGE_LENGTH = 3900
+PUBLIC_REVIEWS_PAGE_SIZE = 10
+PUBLIC_REVIEWS_MORE_CALLBACK_PREFIX = "reviews_more:"
+
+
+@dataclass(frozen=True)
+class PublicReviewsPage:
+    """One page of public reviews plus pagination metadata."""
+
+    reviews: list[Any]
+    page: int
+    page_size: int
+    has_next: bool
+
+    @property
+    def next_page(self) -> int | None:
+        if not self.has_next:
+            return None
+        return self.page + 1
 
 
 class ReviewCollectionError(ValueError):
@@ -30,6 +49,29 @@ def parse_review_request_callback_data(callback_data: str) -> int:
     if booking_id <= 0:
         raise ValueError("Booking id must be positive")
     return booking_id
+
+
+def build_public_reviews_more_callback_data(page: int) -> str:
+    """Build callback data for loading a public reviews page."""
+
+    page_number = int(page)
+    if page_number <= 0:
+        raise ValueError("Page must be positive")
+    return f"{PUBLIC_REVIEWS_MORE_CALLBACK_PREFIX}{page_number}"
+
+
+def parse_public_reviews_more_callback_data(callback_data: str) -> int:
+    """Parse public reviews pagination callback data into a page number."""
+
+    if not callback_data.startswith(PUBLIC_REVIEWS_MORE_CALLBACK_PREFIX):
+        raise ValueError("Invalid public reviews callback data")
+    raw_page = callback_data.removeprefix(PUBLIC_REVIEWS_MORE_CALLBACK_PREFIX)
+    if not raw_page.isascii() or not raw_page.isdecimal() or raw_page.startswith("0"):
+        raise ValueError("Invalid public reviews callback data")
+    page = int(raw_page)
+    if page <= 0:
+        raise ValueError("Page must be positive")
+    return page
 
 
 def _value(row: Any, key: str) -> Any:
@@ -109,6 +151,23 @@ class PublicReviewsService:
     async def list_published_reviews(self, *, limit: int = 10) -> list[Any]:
         safe_limit = min(max(1, int(limit)), MAX_PUBLIC_REVIEWS_LIMIT)
         return await ReviewsRepository(self.db_pool).list_published(limit=safe_limit)
+
+    async def list_published_page(
+        self,
+        *,
+        page: int = 1,
+        page_size: int = PUBLIC_REVIEWS_PAGE_SIZE,
+    ) -> PublicReviewsPage:
+        page_number = max(1, int(page))
+        safe_page_size = min(max(1, int(page_size)), MAX_PUBLIC_REVIEWS_LIMIT)
+        offset = (page_number - 1) * safe_page_size
+        rows = await ReviewsRepository(self.db_pool).list_published(limit=safe_page_size + 1, offset=offset)
+        return PublicReviewsPage(
+            reviews=list(rows[:safe_page_size]),
+            page=page_number,
+            page_size=safe_page_size,
+            has_next=len(rows) > safe_page_size,
+        )
 
 
 class ReviewService:

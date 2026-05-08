@@ -15,6 +15,7 @@ from bot.keyboards.client import (
     booking_cancel_keyboard,
     language_selection_keyboard,
     main_menu_keyboard,
+    public_reviews_keyboard,
 )
 from bot.services.booking_notifications import (
     format_admin_booking_cancelled_message,
@@ -24,10 +25,12 @@ from bot.services.admin_i18n import translate_with_overrides
 from bot.services.bookings import BookingCancellationError, BookingCreationError, BookingService, REVIEW_REQUEST_CALLBACK_PREFIX
 from bot.services.language import ensure_user_language, get_user_language, save_user_language
 from bot.services.reviews import (
+    PUBLIC_REVIEWS_MORE_CALLBACK_PREFIX,
     PublicReviewsService,
     ReviewCollectionError,
     ReviewService,
     format_public_reviews_report,
+    parse_public_reviews_more_callback_data,
     parse_review_request_callback_data,
 )
 from bot.services.slots import (
@@ -81,11 +84,35 @@ async def handle_free_slots_menu(message: Message, db_pool) -> None:
 
 
 async def handle_reviews_menu(message: Message, db_pool) -> None:
-    """Show published reviews to clients."""
+    """Show the first page of published reviews to clients."""
 
     language = await ensure_user_language(db_pool, message.from_user)
-    reviews = await PublicReviewsService(db_pool).list_published_reviews(limit=10)
-    await message.answer(format_public_reviews_report(reviews, language=language), reply_markup=main_menu_keyboard(language))
+    page = await PublicReviewsService(db_pool).list_published_page(page=1)
+    reply_markup = public_reviews_keyboard(next_page=page.next_page, language=language) or main_menu_keyboard(language)
+    await message.answer(format_public_reviews_report(page.reviews, language=language), reply_markup=reply_markup)
+
+
+async def handle_public_reviews_more(callback: CallbackQuery, db_pool) -> None:
+    """Show the next page of published reviews from an inline pagination button."""
+
+    tg_id = callback.from_user.id if callback.from_user is not None else 0
+    language = await get_user_language(db_pool, tg_id)
+    try:
+        page_number = parse_public_reviews_more_callback_data(callback.data or "")
+    except ValueError:
+        await callback.answer(t("published_reviews_empty", language), show_alert=True)
+        return
+
+    page = await PublicReviewsService(db_pool).list_published_page(page=page_number)
+    if not page.reviews:
+        await callback.answer(t("published_reviews_empty", language), show_alert=True)
+        return
+    if callback.message is not None:
+        await callback.message.edit_text(
+            format_public_reviews_report(page.reviews, language=language),
+            reply_markup=public_reviews_keyboard(next_page=page.next_page, language=language),
+        )
+    await callback.answer()
 
 
 async def handle_slot_selected(callback: CallbackQuery, db_pool) -> None:
@@ -338,6 +365,10 @@ def create_client_router() -> Router:
     router.message.register(handle_language_menu, F.text.in_(LANGUAGE_MENU_TEXTS))
     router.message.register(handle_reviews_menu, F.text.in_(REVIEWS_MENU_TEXTS))
     router.message.register(handle_review_text, ReviewStates.waiting_for_text)
+    router.callback_query.register(
+        handle_public_reviews_more,
+        F.data.startswith(PUBLIC_REVIEWS_MORE_CALLBACK_PREFIX),
+    )
     router.callback_query.register(
         handle_booking_cancel,
         F.data.startswith(BOOKING_CANCEL_CALLBACK_PREFIX),
