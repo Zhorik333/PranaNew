@@ -23,7 +23,13 @@ from bot.services.booking_notifications import (
 from bot.services.admin_i18n import translate_with_overrides
 from bot.services.bookings import BookingCancellationError, BookingCreationError, BookingService, REVIEW_REQUEST_CALLBACK_PREFIX
 from bot.services.language import ensure_user_language, get_user_language, save_user_language
-from bot.services.reviews import ReviewCollectionError, ReviewService, parse_review_request_callback_data
+from bot.services.reviews import (
+    PublicReviewsService,
+    ReviewCollectionError,
+    ReviewService,
+    format_public_reviews_report,
+    parse_review_request_callback_data,
+)
 from bot.services.slots import (
     BOOKING_PREVIEW_CALLBACK_PREFIX,
     BOOKING_PREVIEW_CHANGE_CALLBACK_PREFIX,
@@ -75,10 +81,11 @@ async def handle_free_slots_menu(message: Message, db_pool) -> None:
 
 
 async def handle_reviews_menu(message: Message, db_pool) -> None:
-    """Open the reviews client screen placeholder until reviews listing is implemented."""
+    """Show published reviews to clients."""
 
     language = await ensure_user_language(db_pool, message.from_user)
-    await message.answer(t("reviews_unavailable", language), reply_markup=main_menu_keyboard(language))
+    reviews = await PublicReviewsService(db_pool).list_published_reviews(limit=10)
+    await message.answer(format_public_reviews_report(reviews, language=language), reply_markup=main_menu_keyboard(language))
 
 
 async def handle_slot_selected(callback: CallbackQuery, db_pool) -> None:

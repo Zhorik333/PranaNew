@@ -105,6 +105,8 @@ REQUIRED_KEYS = (
     "admin_review_status_pending",
     "admin_review_status_published",
     "admin_review_status_rejected",
+    "published_reviews_title",
+    "published_reviews_empty",
     "reviews_unavailable",
 )
 
@@ -206,6 +208,8 @@ MESSAGES: Mapping[str, Mapping[str, str]] = {
         "admin_review_status_pending": "pending",
         "admin_review_status_published": "published",
         "admin_review_status_rejected": "rejected",
+        "published_reviews_title": "Опубликованные отзывы:",
+        "published_reviews_empty": "Пока опубликованных отзывов нет.",
         "reviews_unavailable": "Раздел отзывов скоро будет доступен.",
     },
     "en": {
@@ -305,6 +309,8 @@ MESSAGES: Mapping[str, Mapping[str, str]] = {
         "admin_review_status_pending": "pending",
         "admin_review_status_published": "published",
         "admin_review_status_rejected": "rejected",
+        "published_reviews_title": "Published reviews:",
+        "published_reviews_empty": "There are no published reviews yet.",
         "reviews_unavailable": "The reviews section will be available soon.",
     },
     "sr": {
@@ -404,6 +410,8 @@ MESSAGES: Mapping[str, Mapping[str, str]] = {
         "admin_review_status_pending": "pending",
         "admin_review_status_published": "published",
         "admin_review_status_rejected": "rejected",
+        "published_reviews_title": "Objavljene recenzije:",
+        "published_reviews_empty": "Još nema objavljenih recenzija.",
         "reviews_unavailable": "Odeljak za recenzije uskoro će biti dostupan.",
     },
 }

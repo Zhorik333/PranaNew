@@ -61,14 +61,16 @@ class ReviewsRepository(BaseRepository):
         )
 
     async def list_published(self, *, limit: int = 10) -> list[Any]:
-        """Return the newest published reviews."""
+        """Return the newest published reviews with user labels."""
 
         return await self.db.fetch(
             """
-            SELECT id, booking_id, user_id, status, text, rating, created_at, moderated_at
-            FROM reviews
-            WHERE status = 'published'
-            ORDER BY created_at DESC
+            SELECT r.id, r.booking_id, r.user_id, r.status, r.text, r.rating, r.created_at, r.moderated_at,
+                   u.username, NULLIF(concat_ws(' ', u.first_name, u.last_name), '') AS full_name
+            FROM reviews r
+            LEFT JOIN users u ON u.tg_id = r.user_id
+            WHERE r.status = 'published'
+            ORDER BY r.created_at DESC
             LIMIT $1
             """,
             limit,

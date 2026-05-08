@@ -120,14 +120,14 @@ class ClientMainMenuTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(t("no_slots_available", "en"), message.answers[0][0])
         self.assertIsInstance(message.answers[0][1]["reply_markup"], ReplyKeyboardMarkup)
 
-    async def test_task_030_reviews_menu_button_leads_to_localized_placeholder_screen(self):
+    async def test_task_030_reviews_menu_button_leads_to_localized_reviews_screen(self):
         db = FakeDatabase()
         db.users[42] = {"tg_id": 42, "language": "sr"}
         message = FakeMessage(from_user=FakeUser(), text=t("menu_reviews", "sr"))
 
         await handle_reviews_menu(message, db_pool=db)
 
-        self.assertEqual(t("reviews_unavailable", "sr"), message.answers[0][0])
+        self.assertEqual(t("published_reviews_empty", "sr"), message.answers[0][0])
         self.assertIsInstance(message.answers[0][1]["reply_markup"], ReplyKeyboardMarkup)
 
     def test_task_030_router_filters_cover_all_localized_menu_buttons(self):

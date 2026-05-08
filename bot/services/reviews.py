@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime
+from html import escape
 from typing import Any
 
+from bot.i18n import t
 from bot.repositories.reviews import ReviewsRepository
 from bot.services.bookings import REVIEW_REQUEST_CALLBACK_PREFIX
 
 MAX_REVIEW_TEXT_LENGTH = 1000
+MAX_PUBLIC_REVIEWS_LIMIT = 20
+MAX_PUBLIC_REVIEW_TEXT_LENGTH = 500
+MAX_PUBLIC_REVIEW_AUTHOR_LENGTH = 80
+MAX_PUBLIC_REVIEWS_MESSAGE_LENGTH = 3900
 
 
 class ReviewCollectionError(ValueError):
@@ -32,6 +39,76 @@ def _value(row: Any, key: str) -> Any:
         return row[key]
     except (KeyError, TypeError):
         return getattr(row, key)
+
+
+def _format_review_date(value: Any) -> str:
+    if isinstance(value, datetime):
+        return value.strftime("%d.%m.%Y")
+    if isinstance(value, date):
+        return value.strftime("%d.%m.%Y")
+    return str(value or "")
+
+
+def _public_author_label(row: Any) -> str:
+    username = _value_or_none(row, "username")
+    full_name = _value_or_none(row, "full_name")
+    if username:
+        return "@" + str(username)
+    if full_name:
+        return str(full_name)
+    return "—"
+
+
+def _value_or_none(row: Any, key: str) -> Any | None:
+    try:
+        return _value(row, key)
+    except (KeyError, AttributeError, TypeError):
+        return None
+
+
+def _truncate_public_review_text(text: str, *, max_length: int = MAX_PUBLIC_REVIEW_TEXT_LENGTH) -> str:
+    if len(text) <= max_length:
+        return text
+    return text[: max_length - 1].rstrip() + "…"
+
+
+def _truncate_public_author_label(author: str, *, max_length: int = MAX_PUBLIC_REVIEW_AUTHOR_LENGTH) -> str:
+    if len(author) <= max_length:
+        return author
+    return author[: max_length - 1].rstrip() + "…"
+
+
+def format_public_reviews_report(rows: list[Any], *, language: str = "ru") -> str:
+    """Format published reviews for client display using HTML-safe text and Telegram-safe length."""
+
+    if not rows:
+        return t("published_reviews_empty", language)
+
+    lines = [t("published_reviews_title", language)]
+    current_text = "\n".join(lines)
+    for row in rows:
+        author = escape(_truncate_public_author_label(_public_author_label(row)))
+        raw_text = str(_value_or_none(row, "text") or "")
+        text = escape(_truncate_public_review_text(raw_text))
+        created_at = _format_review_date(_value_or_none(row, "created_at"))
+        review_lines = ["", f"• <b>{author}</b> · {escape(created_at)}", text]
+        candidate = current_text + "\n" + "\n".join(review_lines)
+        if len(candidate) > MAX_PUBLIC_REVIEWS_MESSAGE_LENGTH:
+            break
+        lines.extend(review_lines)
+        current_text = candidate
+    return current_text
+
+
+class PublicReviewsService:
+    """Read published reviews for public client display."""
+
+    def __init__(self, db_pool: Any) -> None:
+        self.db_pool = db_pool
+
+    async def list_published_reviews(self, *, limit: int = 10) -> list[Any]:
+        safe_limit = min(max(1, int(limit)), MAX_PUBLIC_REVIEWS_LIMIT)
+        return await ReviewsRepository(self.db_pool).list_published(limit=safe_limit)
 
 
 class ReviewService:
