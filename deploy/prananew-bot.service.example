@@ -1,0 +1,19 @@
+[Unit]
+Description=PranaNew Telegram booking bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/prananew
+EnvironmentFile=/opt/prananew/.env
+ExecStart=/opt/prananew/.venv/bin/python -m bot.main
+Restart=always
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=30
+User=prananew
+Group=prananew
+
+[Install]
+WantedBy=multi-user.target
