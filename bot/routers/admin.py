@@ -26,6 +26,15 @@ from bot.services.admin_i18n import (
     parse_get_text_command,
     parse_set_text_command,
 )
+from bot.services.admin_reviews import (
+    AdminReviewError,
+    AdminReviewsService,
+    format_admin_review_details,
+    format_admin_reviews_report,
+    parse_admin_review_command,
+    parse_admin_review_status_command,
+    parse_admin_reviews_command,
+)
 from bot.services.admin_users import (
     AdminUserError,
     AdminUsersService,
@@ -257,6 +266,65 @@ async def handle_admin_clear_text(message: Message, db_pool, config: Config) -> 
         await message.answer(t("admin_i18n_command_error", ADMIN_LANGUAGE))
         return
     await message.answer(t("admin_i18n_text_cleared", ADMIN_LANGUAGE), reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE))
+
+
+async def handle_admin_reviews_menu(message: Message, db_pool, config: Config) -> None:
+    """Show review moderation command help from the admin menu."""
+
+    if not is_admin_chat(message, config):
+        await message.answer(t("admin_only", ADMIN_LANGUAGE))
+        return
+    await message.answer(t("admin_reviews_help", ADMIN_LANGUAGE), reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE))
+
+
+async def handle_admin_review_list(message: Message, db_pool, config: Config) -> None:
+    """List reviews by moderation status."""
+
+    if not is_admin_chat(message, config):
+        await message.answer(t("admin_only", ADMIN_LANGUAGE))
+        return
+    try:
+        status, limit = parse_admin_reviews_command(message.text or "")
+        rows = await AdminReviewsService(db_pool).list_reviews(status=status, limit=limit)
+        report = format_admin_reviews_report(rows, status=status, language=ADMIN_LANGUAGE)
+    except AdminReviewError:
+        await message.answer(t("admin_review_command_error", ADMIN_LANGUAGE))
+        return
+    await message.answer(report, reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE))
+
+
+async def handle_admin_review_detail(message: Message, db_pool, config: Config) -> None:
+    """Show one review by id."""
+
+    if not is_admin_chat(message, config):
+        await message.answer(t("admin_only", ADMIN_LANGUAGE))
+        return
+    try:
+        review_id = parse_admin_review_command(message.text or "")
+        row = await AdminReviewsService(db_pool).get_review_details(review_id)
+        report = format_admin_review_details(row, language=ADMIN_LANGUAGE)
+    except AdminReviewError:
+        await message.answer(t("admin_review_command_error", ADMIN_LANGUAGE))
+        return
+    await message.answer(report, reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE))
+
+
+async def handle_admin_review_status(message: Message, db_pool, config: Config) -> None:
+    """Publish or reject a pending review."""
+
+    if not is_admin_chat(message, config):
+        await message.answer(t("admin_only", ADMIN_LANGUAGE))
+        return
+    try:
+        review_id, status = parse_admin_review_status_command(message.text or "")
+        row = await AdminReviewsService(db_pool).set_review_status(review_id=review_id, status=status)
+    except AdminReviewError:
+        await message.answer(t("admin_review_command_error", ADMIN_LANGUAGE))
+        return
+    await message.answer(
+        t("admin_review_status_updated", ADMIN_LANGUAGE, review_id=row["id"], status=row["status"]),
+        reply_markup=admin_menu_keyboard(ADMIN_LANGUAGE),
+    )
 
 
 async def handle_admin_users_list(message: Message, db_pool, config: Config) -> None:
@@ -499,9 +567,13 @@ def create_admin_router() -> Router:
     router.message.register(handle_admin_set_text, Command("set_text"))
     router.message.register(handle_admin_get_text, Command("get_text"))
     router.message.register(handle_admin_clear_text, Command("clear_text"))
+    router.message.register(handle_admin_review_list, Command("reviews"))
+    router.message.register(handle_admin_review_detail, Command("review"))
+    router.message.register(handle_admin_review_status, Command("review_status"))
     router.message.register(handle_admin_generate_slots_menu, F.text == t("admin_menu_generate_slots", ADMIN_LANGUAGE))
     router.message.register(handle_admin_booked_slots_menu, F.text == t("admin_menu_booked_slots", ADMIN_LANGUAGE))
     router.message.register(handle_admin_active_date_menu, F.text == t("admin_menu_active_date", ADMIN_LANGUAGE))
+    router.message.register(handle_admin_reviews_menu, F.text == t("admin_menu_reviews", ADMIN_LANGUAGE))
     router.message.register(handle_admin_i18n_menu, F.text == t("admin_menu_i18n", ADMIN_LANGUAGE))
     router.callback_query.register(
         handle_booking_complete,

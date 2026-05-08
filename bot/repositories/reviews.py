@@ -74,15 +74,74 @@ class ReviewsRepository(BaseRepository):
             limit,
         )
 
-    async def set_status(self, review_id: int, status: str) -> None:
-        """Moderate a review."""
+    async def list_for_moderation(self, *, status: str = "pending", limit: int = 10) -> list[Any]:
+        """Return reviews for admin moderation with user labels."""
 
-        await self.db.execute(
+        if status == "all":
+            return await self.db.fetch(
+                """
+                SELECT r.id, r.booking_id, r.user_id, r.status, r.text, r.rating, r.created_at, r.moderated_at,
+                       u.username, NULLIF(concat_ws(' ', u.first_name, u.last_name), '') AS full_name
+                FROM reviews r
+                LEFT JOIN users u ON u.tg_id = r.user_id
+                ORDER BY r.created_at DESC
+                LIMIT $1
+                """,
+                limit,
+            )
+        return await self.db.fetch(
+            """
+            SELECT r.id, r.booking_id, r.user_id, r.status, r.text, r.rating, r.created_at, r.moderated_at,
+                   u.username, NULLIF(concat_ws(' ', u.first_name, u.last_name), '') AS full_name
+            FROM reviews r
+            LEFT JOIN users u ON u.tg_id = r.user_id
+            WHERE r.status = $1
+            ORDER BY r.created_at DESC
+            LIMIT $2
+            """,
+            status,
+            limit,
+        )
+
+    async def review_details(self, review_id: int) -> Any | None:
+        """Return one review with user labels for admin display."""
+
+        return await self.db.fetchrow(
+            """
+            SELECT r.id, r.booking_id, r.user_id, r.status, r.text, r.rating, r.created_at, r.moderated_at,
+                   u.username, NULLIF(concat_ws(' ', u.first_name, u.last_name), '') AS full_name
+            FROM reviews r
+            LEFT JOIN users u ON u.tg_id = r.user_id
+            WHERE r.id = $1
+            """,
+            review_id,
+        )
+
+    async def lock_review_for_moderation(self, review_id: int, *, expected_status: str = "pending") -> Any | None:
+        """Lock a review before changing moderation status."""
+
+        return await self.db.fetchrow(
+            """
+            SELECT id, booking_id, user_id, status, text, rating, created_at, moderated_at
+            FROM reviews
+            WHERE id = $1
+              AND status = $2
+            FOR UPDATE
+            """,
+            review_id,
+            expected_status,
+        )
+
+    async def set_status(self, review_id: int, status: str) -> Any | None:
+        """Moderate a review and return the updated row."""
+
+        return await self.db.fetchrow(
             """
             UPDATE reviews
             SET status = $2,
                 moderated_at = now()
             WHERE id = $1
+            RETURNING id, booking_id, user_id, status, text, rating, created_at, moderated_at
             """,
             review_id,
             status,
