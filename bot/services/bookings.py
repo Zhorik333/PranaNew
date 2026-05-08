@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from datetime import datetime
 import json
+import logging
 from typing import Any
 
 from bot.repositories.bookings import BookingsRepository
 from bot.repositories.slots import SlotsRepository
 from bot.services.booking_validation import BookingValidationError, validate_slot_selection
+from bot.structured_logging import get_structured_logger, log_event
 
 DEFAULT_BOOKING_STATUS = "active"
 BOOKING_COMPLETE_CALLBACK_PREFIX = "complete_booking:"
@@ -101,8 +103,9 @@ def _count_row_booked_count(row: Any) -> int:
 class BookingService:
     """Creates and manages bookings atomically against an asyncpg-like pool."""
 
-    def __init__(self, db_pool) -> None:
+    def __init__(self, db_pool, *, logger: logging.Logger | None = None) -> None:
         self.db_pool = db_pool
+        self.logger = logger or get_structured_logger()
 
     async def get_admin_notification_details(self, *, booking_id: int) -> Any:
         """Fetch compact booking details for an admin-group notification."""
@@ -139,6 +142,13 @@ class BookingService:
 
                 await bookings_repository.set_status(booking_id, "completed")
                 await bookings_repository.create_review_request_job(booking_id=booking_id, user_id=user_id)
+                log_event(
+                    self.logger,
+                    logging.INFO,
+                    "booking_completed",
+                    booking_id=int(booking_id),
+                    user_id=user_id,
+                )
                 return {
                     "booking_id": int(booking_id),
                     "user_id": user_id,
@@ -248,6 +258,13 @@ class BookingService:
                     "cancelled",
                     cancellation_reason=cancellation_reason,
                 )
+                log_event(
+                    self.logger,
+                    logging.INFO,
+                    "booking_cancelled",
+                    booking_id=int(booking_id),
+                    user_id=int(user_id),
+                )
                 return True
 
     async def create_booking(self, *, user_id: int, selected_slot_ids: list[int]) -> int:
@@ -295,7 +312,7 @@ class BookingService:
                         raise BookingCreationError("slot_full")
 
                 pickup_datetime = _slot_start(ordered_slots[-1])
-                return int(
+                booking_id = int(
                     await bookings_repository.create_booking(
                         user_id=user_id,
                         slot_ids=ordered_slot_ids,
@@ -306,3 +323,12 @@ class BookingService:
                         pickup_time=pickup_datetime,
                     )
                 )
+                log_event(
+                    self.logger,
+                    logging.INFO,
+                    "booking_created",
+                    booking_id=booking_id,
+                    user_id=int(user_id),
+                    slot_ids=ordered_slot_ids,
+                )
+                return booking_id

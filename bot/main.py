@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from bot.db import DEFAULT_POOL_FACTORY, PoolFactory, close_pool, create_pool
 from bot.routers.admin import create_admin_router
 from bot.routers.client import create_client_router
 from bot.services.review_scheduler import start_review_request_scheduler
+from bot.structured_logging import configure_structured_logging, get_structured_logger, log_event
 
 RunPollingFunc = Callable[[Bot, Dispatcher], Awaitable[None]]
 
@@ -53,21 +55,33 @@ async def run_application(
     *,
     run_polling_func: RunPollingFunc = run_polling,
     pool_factory: PoolFactory = DEFAULT_POOL_FACTORY,
+    logger: logging.Logger | None = None,
 ) -> None:
     """Create runtime resources, run polling, and close resources on shutdown."""
 
+    logger = logger or get_structured_logger()
+    log_event(logger, logging.INFO, "bot_starting", admin_chat_id=config.admin_chat_id)
     bot = create_bot(config)
     dispatcher = create_dispatcher()
     pool = None
     scheduler_task = None
 
     try:
-        pool = await create_pool(config.database_url, pool_factory=pool_factory)
+        try:
+            pool = await create_pool(config.database_url, pool_factory=pool_factory)
+        except Exception:
+            log_event(logger, logging.ERROR, "database_error", exc_info=True)
+            raise
         dispatcher.workflow_data["db_pool"] = pool
         dispatcher.workflow_data["config"] = config
         scheduler_task = start_review_request_scheduler(pool, bot, poll_interval_seconds=30)
+        log_event(logger, logging.INFO, "bot_polling_starting", admin_chat_id=config.admin_chat_id)
         await asyncio.sleep(0)
-        await run_polling_func(bot, dispatcher)
+        try:
+            await run_polling_func(bot, dispatcher)
+        except Exception:
+            log_event(logger, logging.ERROR, "telegram_api_error", exc_info=True)
+            raise
     finally:
         if scheduler_task is not None:
             scheduler_task.cancel()
@@ -79,6 +93,7 @@ async def run_application(
             await close_pool(pool)
         finally:
             await bot.session.close()
+            log_event(logger, logging.INFO, "bot_stopped", admin_chat_id=config.admin_chat_id)
 
 
 def main(
@@ -89,11 +104,13 @@ def main(
     """CLI entrypoint used by `python -m bot.main`."""
 
     config = load_config(env_path)
+    logger = configure_structured_logging(level=config.log_level)
     asyncio.run(
         run_application(
             config,
             run_polling_func=run_polling_func,
             pool_factory=pool_factory,
+            logger=logger,
         )
     )
 
