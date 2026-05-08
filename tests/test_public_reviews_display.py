@@ -187,7 +187,7 @@ class PublicReviewsDisplayTest(unittest.IsolatedAsyncioTestCase):
 
     def test_task_082_formats_public_reviews_with_html_escaping(self):
         text = format_public_reviews_report(
-            [public_review_row(), public_review_row(id=12, username=None, full_name="No <Username>")],
+            [public_review_row(rating=5), public_review_row(id=12, username=None, full_name="No <Username>", rating=4)],
             language="ru",
         )
 
@@ -196,6 +196,8 @@ class PublicReviewsDisplayTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("@bad&lt;user&gt;", text)
         self.assertIn("No &lt;Username&gt;", text)
         self.assertIn("08.05.2026", text)
+        self.assertIn("★★★★★", text)
+        self.assertIn("★★★★☆", text)
         self.assertNotIn("<спасибо>", text)
         self.assertNotIn("bad<user>", text)
 

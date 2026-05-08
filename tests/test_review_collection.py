@@ -4,11 +4,18 @@ from datetime import datetime, timezone
 from bot.i18n import SUPPORTED_LANGUAGES, t
 from bot.repositories.reviews import ReviewsRepository
 from bot.routers.client import (
+    handle_review_rating,
     handle_review_request,
     handle_review_text,
 )
 from bot.services.bookings import build_review_request_callback_data
-from bot.services.reviews import ReviewCollectionError, ReviewService, parse_review_request_callback_data
+from bot.services.reviews import (
+    ReviewCollectionError,
+    ReviewService,
+    build_review_rating_callback_data,
+    parse_review_rating_callback_data,
+    parse_review_request_callback_data,
+)
 from bot.states.reviews import ReviewStates
 
 
@@ -99,8 +106,8 @@ class FakeCallback:
         self.message = message or FakeMessage()
         self.answers = []
 
-    async def answer(self, text=None, **kwargs):
-        self.answers.append((text, kwargs))
+    async def answer(self, text=None, show_alert=False, **kwargs):
+        self.answers.append((text, show_alert, kwargs))
 
 
 class FakeMessage:
@@ -162,6 +169,8 @@ def review_row(*, review_id=9, booking_id=51, user_id=7001, text="Отлична
 class ReviewCollectionTest(unittest.IsolatedAsyncioTestCase):
     def test_task_080_i18n_contains_review_collection_keys(self):
         keys = [
+            "review_rating_prompt",
+            "review_rating_error",
             "review_prompt",
             "review_saved",
             "review_unavailable",
@@ -178,6 +187,15 @@ class ReviewCollectionTest(unittest.IsolatedAsyncioTestCase):
             parse_review_request_callback_data("leave_review:0")
         with self.assertRaises(ValueError):
             parse_review_request_callback_data("bad:51")
+
+    def test_task_082_parses_review_rating_callback_data(self):
+        data = build_review_rating_callback_data(51, 5)
+        self.assertEqual("review_rating:51:5", data)
+        self.assertEqual((51, 5), parse_review_rating_callback_data(data))
+        for malformed in ("review_rating:51:0", "review_rating:51:6", "review_rating:0:5", "review_rating:x:5", "bad:51:5"):
+            with self.subTest(malformed=malformed):
+                with self.assertRaises(ValueError):
+                    parse_review_rating_callback_data(malformed)
 
     async def test_task_080_repository_checks_existing_review_and_booking_owner(self):
         db = FakeDatabase()
@@ -201,9 +219,10 @@ class ReviewCollectionTest(unittest.IsolatedAsyncioTestCase):
         db = FakeDatabase()
         service = ReviewService(FakePool(db))
 
-        review = await service.submit_review(booking_id=51, user_id=7001, text="  Отлично!  ")
+        review = await service.submit_review(booking_id=51, user_id=7001, text="  Отлично!  ", rating=5)
 
         self.assertEqual("Отлично!", review["text"])
+        self.assertEqual(5, review["rating"])
         self.assertEqual("pending", review["status"])
         self.assertEqual(1, len(db.reviews))
 
@@ -211,22 +230,26 @@ class ReviewCollectionTest(unittest.IsolatedAsyncioTestCase):
         db = FakeDatabase()
         service = ReviewService(FakePool(db))
         with self.assertRaisesRegex(ReviewCollectionError, "empty_review"):
-            await service.submit_review(booking_id=51, user_id=7001, text="   ")
+            await service.submit_review(booking_id=51, user_id=7001, text="   ", rating=5)
+        with self.assertRaisesRegex(ReviewCollectionError, "invalid_rating"):
+            await service.submit_review(booking_id=51, user_id=7001, text="Text", rating=None)
+        with self.assertRaisesRegex(ReviewCollectionError, "invalid_rating"):
+            await service.submit_review(booking_id=51, user_id=7001, text="Text", rating=6)
 
         db.existing_review = review_row()
         with self.assertRaisesRegex(ReviewCollectionError, "review_already_exists"):
-            await service.submit_review(booking_id=51, user_id=7001, text="Again")
+            await service.submit_review(booking_id=51, user_id=7001, text="Again", rating=5)
 
         db.existing_review = None
         db.booking = None
         with self.assertRaisesRegex(ReviewCollectionError, "review_unavailable"):
-            await service.submit_review(booking_id=51, user_id=7001, text="Text")
+            await service.submit_review(booking_id=51, user_id=7001, text="Text", rating=5)
 
         db.booking = booking_row(status="active")
         with self.assertRaisesRegex(ReviewCollectionError, "review_unavailable"):
-            await service.submit_review(booking_id=51, user_id=7001, text="Text")
+            await service.submit_review(booking_id=51, user_id=7001, text="Text", rating=5)
 
-    async def test_task_080_handlers_start_fsm_and_save_review_text(self):
+    async def test_task_082_handlers_collect_rating_then_review_text(self):
         db = FakeDatabase()
         state = FakeState()
         callback_message = FakeMessage()
@@ -234,10 +257,19 @@ class ReviewCollectionTest(unittest.IsolatedAsyncioTestCase):
 
         await handle_review_request(callback, db_pool=FakePool(db), state=state)
 
-        self.assertEqual(ReviewStates.waiting_for_text, state.state)
+        self.assertEqual(ReviewStates.waiting_for_rating, state.state)
         self.assertEqual({"booking_id": 51}, state.data)
+        self.assertIn(t("review_rating_prompt", "ru"), callback_message.answers[-1][0])
+        rating_keyboard = callback_message.answers[-1][1].get("reply_markup")
+        self.assertEqual("review_rating:51:5", rating_keyboard.inline_keyboard[0][4].callback_data)
+        self.assertEqual((None, False, {}), callback.answers[-1])
+
+        rating_callback = FakeCallback(data=build_review_rating_callback_data(51, 5), message=callback_message)
+        await handle_review_rating(rating_callback, db_pool=FakePool(db), state=state)
+
+        self.assertEqual(ReviewStates.waiting_for_text, state.state)
+        self.assertEqual({"booking_id": 51, "rating": 5}, state.data)
         self.assertIn(t("review_prompt", "ru"), callback_message.answers[-1][0])
-        self.assertEqual((None, {}), callback.answers[-1])
 
         text_message = FakeMessage(text="Всё вкусно")
         await handle_review_text(text_message, db_pool=FakePool(db), state=state)
@@ -245,6 +277,7 @@ class ReviewCollectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(state.cleared)
         self.assertEqual(1, len(db.reviews))
         self.assertEqual("Всё вкусно", db.reviews[0]["text"])
+        self.assertEqual(5, db.reviews[0]["rating"])
         self.assertEqual(t("review_saved", "ru"), text_message.answers[-1][0])
 
     async def test_task_080_handlers_answer_errors_and_clear_state_when_needed(self):
@@ -260,10 +293,10 @@ class ReviewCollectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(state.cleared)
         self.assertIsNone(state.state)
         self.assertEqual(t("review_already_exists", "ru"), callback.answers[-1][0])
-        self.assertTrue(callback.answers[-1][1]["show_alert"])
+        self.assertTrue(callback.answers[-1][1])
 
         state = FakeState()
-        await state.update_data(booking_id=51)
+        await state.update_data(booking_id=51, rating=5)
         message = FakeMessage(text="   ")
         await handle_review_text(message, db_pool=FakePool(FakeDatabase()), state=state)
 

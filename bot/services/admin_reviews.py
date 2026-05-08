@@ -11,6 +11,8 @@ from bot.repositories.reviews import ReviewsRepository
 REVIEW_STATUSES = {"pending", "published", "rejected", "all"}
 MODERATION_TARGET_STATUSES = {"published", "rejected"}
 MAX_ADMIN_REVIEWS_LIMIT = 50
+MIN_REVIEW_RATING = 1
+MAX_REVIEW_RATING = 5
 
 
 class AdminReviewError(ValueError):
@@ -90,6 +92,16 @@ def _client_label(row: Any) -> str:
     return str(user_id)
 
 
+def _format_rating_stars(rating: Any) -> str:
+    try:
+        value = int(rating)
+    except (TypeError, ValueError):
+        return "—"
+    if not MIN_REVIEW_RATING <= value <= MAX_REVIEW_RATING:
+        return "—"
+    return "★" * value + "☆" * (MAX_REVIEW_RATING - value)
+
+
 def _format_review_row(row: Any) -> str:
     review_id = _value(row, "id")
     booking_id = _value(row, "booking_id")
@@ -97,7 +109,8 @@ def _format_review_row(row: Any) -> str:
     text = escape(str(_value(row, "text", "")))
     if len(text) > 160:
         text = f"{text[:157]}..."
-    return f"#{review_id} booking #{booking_id} [{status}] {_client_label(row)} — {text}"
+    rating = _format_rating_stars(_value(row, "rating", None))
+    return f"#{review_id} booking #{booking_id} [{status}] {rating} {_client_label(row)} — {text}"
 
 
 def format_admin_reviews_report(rows: list[Any], *, status: str, language: str = "ru") -> str:
@@ -120,7 +133,7 @@ def format_admin_review_details(row: Any, *, language: str = "ru") -> str:
             f"Booking: #{_value(row, 'booking_id')}",
             f"Client: {_client_label(row)} ({_value(row, 'user_id')})",
             f"Status: {escape(str(_value(row, 'status')))}",
-            f"Rating: {escape(str(_value(row, 'rating', '') or '—'))}",
+            f"Rating: {_format_rating_stars(_value(row, 'rating', None))}",
             f"Text: {escape(str(_value(row, 'text', '')))}",
             "",
             f"/review_status {review_id} published",

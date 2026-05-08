@@ -16,6 +16,7 @@ from bot.keyboards.client import (
     language_selection_keyboard,
     main_menu_keyboard,
     public_reviews_keyboard,
+    review_rating_keyboard,
 )
 from bot.services.booking_notifications import (
     format_admin_booking_cancelled_message,
@@ -32,6 +33,8 @@ from bot.services.reviews import (
     ReviewService,
     format_public_reviews_report,
     parse_public_reviews_more_callback_data,
+    parse_review_rating_callback_data,
+    REVIEW_RATING_CALLBACK_PREFIX,
     parse_review_request_callback_data,
 )
 from bot.services.slots import (
@@ -306,7 +309,7 @@ async def handle_booking_cancel(callback: CallbackQuery, db_pool, config=None) -
 
 
 async def handle_review_request(callback: CallbackQuery, db_pool, state: FSMContext) -> None:
-    """Start one-step review collection after a completed booking."""
+    """Start rating-first review collection after a completed booking."""
 
     tg_id = callback.from_user.id if callback.from_user is not None else 0
     language = await get_user_language(db_pool, tg_id)
@@ -322,6 +325,32 @@ async def handle_review_request(callback: CallbackQuery, db_pool, state: FSMCont
         return
 
     await state.update_data(booking_id=booking_id)
+    await state.set_state(ReviewStates.waiting_for_rating)
+    if callback.message is not None:
+        await callback.message.answer(
+            t("review_rating_prompt", language),
+            reply_markup=review_rating_keyboard(booking_id),
+        )
+    await callback.answer()
+
+
+async def handle_review_rating(callback: CallbackQuery, db_pool, state: FSMContext) -> None:
+    """Persist selected review rating in FSM and ask for review text."""
+
+    tg_id = callback.from_user.id if callback.from_user is not None else 0
+    language = await get_user_language(db_pool, tg_id)
+    data = await state.get_data()
+    try:
+        booking_id, rating = parse_review_rating_callback_data(callback.data or "")
+        state_booking_id = int(data.get("booking_id", 0))
+        if booking_id != state_booking_id:
+            raise ValueError("Rating callback does not match FSM booking")
+    except (TypeError, ValueError):
+        await state.clear()
+        await callback.answer(t("review_rating_error", language), show_alert=True)
+        return
+
+    await state.update_data(booking_id=booking_id, rating=rating)
     await state.set_state(ReviewStates.waiting_for_text)
     if callback.message is not None:
         await callback.message.answer(t("review_prompt", language), reply_markup=main_menu_keyboard(language))
@@ -336,10 +365,12 @@ async def handle_review_text(message: Message, db_pool, state: FSMContext) -> No
     data = await state.get_data()
     try:
         booking_id = int(data.get("booking_id", 0))
+        rating = int(data.get("rating", 0))
         await ReviewService(db_pool).submit_review(
             booking_id=booking_id,
             user_id=tg_id,
             text=message.text or "",
+            rating=rating,
         )
     except ReviewCollectionError as error:
         if str(error) == "empty_review":
@@ -385,6 +416,11 @@ def create_client_router() -> Router:
     router.message.register(handle_language_menu, F.text.in_(LANGUAGE_MENU_TEXTS))
     router.message.register(handle_reviews_menu, F.text.in_(REVIEWS_MENU_TEXTS))
     router.message.register(handle_review_text, ReviewStates.waiting_for_text)
+    router.callback_query.register(
+        handle_review_rating,
+        ReviewStates.waiting_for_rating,
+        F.data.startswith(REVIEW_RATING_CALLBACK_PREFIX),
+    )
     router.callback_query.register(
         handle_public_reviews_more,
         F.data.startswith(PUBLIC_REVIEWS_MORE_CALLBACK_PREFIX),

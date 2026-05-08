@@ -18,6 +18,9 @@ MAX_PUBLIC_REVIEW_AUTHOR_LENGTH = 80
 MAX_PUBLIC_REVIEWS_MESSAGE_LENGTH = 3900
 PUBLIC_REVIEWS_PAGE_SIZE = 10
 PUBLIC_REVIEWS_MORE_CALLBACK_PREFIX = "reviews_more:"
+REVIEW_RATING_CALLBACK_PREFIX = "review_rating:"
+MIN_REVIEW_RATING = 1
+MAX_REVIEW_RATING = 5
 
 
 @dataclass(frozen=True)
@@ -49,6 +52,34 @@ def parse_review_request_callback_data(callback_data: str) -> int:
     if booking_id <= 0:
         raise ValueError("Booking id must be positive")
     return booking_id
+
+
+def build_review_rating_callback_data(booking_id: int, rating: int) -> str:
+    """Build callback data for choosing a 1-5 review rating."""
+
+    booking_id = int(booking_id)
+    rating = int(rating)
+    if booking_id <= 0:
+        raise ValueError("Booking id must be positive")
+    if not MIN_REVIEW_RATING <= rating <= MAX_REVIEW_RATING:
+        raise ValueError("Review rating must be between 1 and 5")
+    return f"{REVIEW_RATING_CALLBACK_PREFIX}{booking_id}:{rating}"
+
+
+def parse_review_rating_callback_data(callback_data: str) -> tuple[int, int]:
+    """Parse review rating callback data into booking id and rating."""
+
+    if not callback_data.startswith(REVIEW_RATING_CALLBACK_PREFIX):
+        raise ValueError("Invalid review rating callback data")
+    payload = callback_data.removeprefix(REVIEW_RATING_CALLBACK_PREFIX)
+    parts = payload.split(":")
+    if len(parts) != 2 or not all(part.isascii() and part.isdecimal() for part in parts):
+        raise ValueError("Invalid review rating callback data")
+    booking_id = int(parts[0])
+    rating = int(parts[1])
+    if booking_id <= 0 or not MIN_REVIEW_RATING <= rating <= MAX_REVIEW_RATING:
+        raise ValueError("Invalid review rating callback data")
+    return booking_id, rating
 
 
 def build_public_reviews_more_callback_data(page: int) -> str:
@@ -108,6 +139,16 @@ def _value_or_none(row: Any, key: str) -> Any | None:
         return None
 
 
+def _format_rating_stars(rating: Any) -> str:
+    try:
+        value = int(rating)
+    except (TypeError, ValueError):
+        return ""
+    if not MIN_REVIEW_RATING <= value <= MAX_REVIEW_RATING:
+        return ""
+    return "★" * value + "☆" * (MAX_REVIEW_RATING - value)
+
+
 def _truncate_public_review_text(text: str, *, max_length: int = MAX_PUBLIC_REVIEW_TEXT_LENGTH) -> str:
     if len(text) <= max_length:
         return text
@@ -133,7 +174,9 @@ def format_public_reviews_report(rows: list[Any], *, language: str = "ru") -> st
         raw_text = str(_value_or_none(row, "text") or "")
         text = escape(_truncate_public_review_text(raw_text))
         created_at = _format_review_date(_value_or_none(row, "created_at"))
-        review_lines = ["", f"• <b>{author}</b> · {escape(created_at)}", text]
+        rating = _format_rating_stars(_value_or_none(row, "rating"))
+        meta = f"{escape(created_at)} · {rating}" if rating else escape(created_at)
+        review_lines = ["", f"• <b>{author}</b> · {meta}", text]
         candidate = current_text + "\n" + "\n".join(review_lines)
         if len(candidate) > MAX_PUBLIC_REVIEWS_MESSAGE_LENGTH:
             break
@@ -181,7 +224,7 @@ class ReviewService:
 
         await self._validate_booking_for_review(booking_id=booking_id, user_id=user_id)
 
-    async def submit_review(self, *, booking_id: int, user_id: int, text: str, rating: int | None = None) -> Any:
+    async def submit_review(self, *, booking_id: int, user_id: int, text: str, rating: int) -> Any:
         """Create a pending review for a completed booking owned by the user."""
 
         cleaned_text = (text or "").strip()
@@ -189,7 +232,11 @@ class ReviewService:
             raise ReviewCollectionError("empty_review")
         if len(cleaned_text) > MAX_REVIEW_TEXT_LENGTH:
             cleaned_text = cleaned_text[:MAX_REVIEW_TEXT_LENGTH]
-        if rating is not None and not 1 <= int(rating) <= 5:
+        try:
+            rating_value = int(rating)
+        except (TypeError, ValueError) as exc:
+            raise ReviewCollectionError("invalid_rating") from exc
+        if not MIN_REVIEW_RATING <= rating_value <= MAX_REVIEW_RATING:
             raise ReviewCollectionError("invalid_rating")
 
         async with self.db_pool.acquire() as connection:
@@ -204,7 +251,7 @@ class ReviewService:
                     booking_id=booking_id,
                     user_id=user_id,
                     text=cleaned_text,
-                    rating=rating,
+                    rating=rating_value,
                 )
 
     async def _validate_booking_for_review(

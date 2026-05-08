@@ -211,10 +211,10 @@ class AdminReviewModerationTest(unittest.IsolatedAsyncioTestCase):
             await service.set_review_status(review_id=7, status="pending")
 
     def test_task_081_formats_reports_with_html_escaping(self):
-        rows = [review_row(text="<script>x</script>", username="evil<name>")]
+        rows = [review_row(text="<script>x</script>", username="evil<name>", rating=5)]
         report = format_admin_reviews_report(rows, status="pending", language="ru")
         details = format_admin_review_details(
-            review_row(text="<b>Очень вкусно</b>", username=None, full_name="Ann & Bob"),
+            review_row(text="<b>Очень вкусно</b>", username=None, full_name="Ann & Bob", rating=4),
             language="ru",
         )
 
@@ -222,7 +222,9 @@ class AdminReviewModerationTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("#7", report)
         self.assertIn("&lt;script&gt;x&lt;/script&gt;", report)
         self.assertIn("@evil&lt;name&gt;", report)
+        self.assertIn("★★★★★", report)
         self.assertIn(t("admin_review_details_title", "ru", review_id=7), details)
+        self.assertIn("★★★★☆", details)
         self.assertIn("&lt;b&gt;Очень вкусно&lt;/b&gt;", details)
         self.assertIn("Ann &amp; Bob", details)
 

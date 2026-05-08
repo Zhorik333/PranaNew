@@ -6,6 +6,7 @@ from aiogram.fsm.state import State, StatesGroup
 
 
 class ReviewStates(StatesGroup):
-    """States for one-step review text collection."""
+    """States for review rating and text collection."""
 
+    waiting_for_rating = State()
     waiting_for_text = State()
