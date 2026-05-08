@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from aiogram import F, Router
 from aiogram.filters import CommandStart
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from bot.i18n import SUPPORTED_LANGUAGES, t
@@ -20,8 +21,9 @@ from bot.services.booking_notifications import (
     format_admin_new_booking_message,
 )
 from bot.services.admin_i18n import translate_with_overrides
-from bot.services.bookings import BookingCancellationError, BookingCreationError, BookingService
+from bot.services.bookings import BookingCancellationError, BookingCreationError, BookingService, REVIEW_REQUEST_CALLBACK_PREFIX
 from bot.services.language import ensure_user_language, get_user_language, save_user_language
+from bot.services.reviews import ReviewCollectionError, ReviewService, parse_review_request_callback_data
 from bot.services.slots import (
     BOOKING_PREVIEW_CALLBACK_PREFIX,
     BOOKING_PREVIEW_CHANGE_CALLBACK_PREFIX,
@@ -37,6 +39,8 @@ from bot.services.slots import (
     parse_slot_callback_data,
     toggle_slot_selection,
 )
+
+from bot.states.reviews import ReviewStates
 
 LANGUAGE_CALLBACK_PREFIX = "language:"
 LANGUAGE_MENU_TEXTS = {t("menu_language", language) for language in SUPPORTED_LANGUAGES}
@@ -247,6 +251,61 @@ async def handle_booking_cancel(callback: CallbackQuery, db_pool, config=None) -
     await callback.answer()
 
 
+async def handle_review_request(callback: CallbackQuery, db_pool, state: FSMContext) -> None:
+    """Start one-step review collection after a completed booking."""
+
+    tg_id = callback.from_user.id if callback.from_user is not None else 0
+    language = await get_user_language(db_pool, tg_id)
+    try:
+        booking_id = parse_review_request_callback_data(callback.data or "")
+        await ReviewService(db_pool).can_review(booking_id=booking_id, user_id=tg_id)
+    except (ValueError, ReviewCollectionError) as error:
+        await state.clear()
+        if str(error) == "review_already_exists":
+            await callback.answer(t("review_already_exists", language), show_alert=True)
+        else:
+            await callback.answer(t("review_unavailable", language), show_alert=True)
+        return
+
+    await state.update_data(booking_id=booking_id)
+    await state.set_state(ReviewStates.waiting_for_text)
+    if callback.message is not None:
+        await callback.message.answer(t("review_prompt", language), reply_markup=main_menu_keyboard(language))
+    await callback.answer()
+
+
+async def handle_review_text(message: Message, db_pool, state: FSMContext) -> None:
+    """Persist review text from the FSM state."""
+
+    tg_id = message.from_user.id if message.from_user is not None else 0
+    language = await get_user_language(db_pool, tg_id)
+    data = await state.get_data()
+    try:
+        booking_id = int(data.get("booking_id", 0))
+        await ReviewService(db_pool).submit_review(
+            booking_id=booking_id,
+            user_id=tg_id,
+            text=message.text or "",
+        )
+    except ReviewCollectionError as error:
+        if str(error) == "empty_review":
+            await message.answer(t("review_empty_error", language), reply_markup=main_menu_keyboard(language))
+        elif str(error) == "review_already_exists":
+            await state.clear()
+            await message.answer(t("review_already_exists", language), reply_markup=main_menu_keyboard(language))
+        else:
+            await state.clear()
+            await message.answer(t("review_unavailable", language), reply_markup=main_menu_keyboard(language))
+        return
+    except (TypeError, ValueError):
+        await state.clear()
+        await message.answer(t("review_unavailable", language), reply_markup=main_menu_keyboard(language))
+        return
+
+    await state.clear()
+    await message.answer(t("review_saved", language), reply_markup=main_menu_keyboard(language))
+
+
 async def handle_language_selected(callback: CallbackQuery, db_pool) -> None:
     """Persist a language selected from inline callback buttons."""
 
@@ -271,6 +330,7 @@ def create_client_router() -> Router:
     router.message.register(handle_free_slots_menu, F.text.in_(FREE_SLOTS_MENU_TEXTS))
     router.message.register(handle_language_menu, F.text.in_(LANGUAGE_MENU_TEXTS))
     router.message.register(handle_reviews_menu, F.text.in_(REVIEWS_MENU_TEXTS))
+    router.message.register(handle_review_text, ReviewStates.waiting_for_text)
     router.callback_query.register(
         handle_booking_cancel,
         F.data.startswith(BOOKING_CANCEL_CALLBACK_PREFIX),
@@ -290,6 +350,10 @@ def create_client_router() -> Router:
     router.callback_query.register(
         handle_slot_selected,
         F.data.startswith(SLOT_CALLBACK_PREFIX),
+    )
+    router.callback_query.register(
+        handle_review_request,
+        F.data.startswith(REVIEW_REQUEST_CALLBACK_PREFIX),
     )
     router.callback_query.register(
         handle_language_selected,

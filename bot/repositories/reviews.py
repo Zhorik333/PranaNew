@@ -10,6 +10,34 @@ from bot.repositories.base import BaseRepository
 class ReviewsRepository(BaseRepository):
     """Data access methods for client reviews."""
 
+    async def get_completed_booking_for_review(self, *, booking_id: int, user_id: int) -> Any | None:
+        """Lock and return a completed booking owned by the user for review."""
+
+        return await self.db.fetchrow(
+            """
+            SELECT id, user_id, status
+            FROM bookings
+            WHERE id = $1
+              AND user_id = $2
+              AND status = 'completed'
+            FOR UPDATE
+            """,
+            booking_id,
+            user_id,
+        )
+
+    async def get_by_booking_id(self, booking_id: int) -> Any | None:
+        """Return an existing review for a booking if present."""
+
+        return await self.db.fetchrow(
+            """
+            SELECT id, booking_id, user_id, status, text, rating, created_at, moderated_at
+            FROM reviews
+            WHERE booking_id = $1
+            """,
+            booking_id,
+        )
+
     async def create_review(
         self,
         *,
