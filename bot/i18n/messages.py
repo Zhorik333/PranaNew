@@ -114,6 +114,7 @@ REQUIRED_KEYS = (
     "admin_analytics_help",
     "admin_analytics_report_title",
     "admin_analytics_command_error",
+    "rate_limit_exceeded",
 )
 
 MESSAGES: Mapping[str, Mapping[str, str]] = {
@@ -223,6 +224,7 @@ MESSAGES: Mapping[str, Mapping[str, str]] = {
         "admin_analytics_help": "Команда: /analytics 2026-05-08",
         "admin_analytics_report_title": "Аналитика за {slot_date}:",
         "admin_analytics_command_error": "Неверная команда аналитики. Используйте /analytics YYYY-MM-DD.",
+        "rate_limit_exceeded": "Слишком много сообщений. Подождите пару секунд и попробуйте снова.",
     },
     "en": {
         "welcome": "Welcome to PranaNew. Choose an action from the menu.",
@@ -330,6 +332,7 @@ MESSAGES: Mapping[str, Mapping[str, str]] = {
         "admin_analytics_help": "Command: /analytics 2026-05-08",
         "admin_analytics_report_title": "Analytics for {slot_date}:",
         "admin_analytics_command_error": "Invalid analytics command. Use /analytics YYYY-MM-DD.",
+        "rate_limit_exceeded": "Too many messages. Wait a couple of seconds and try again.",
     },
     "sr": {
         "welcome": "Dobrodošli u PranaNew. Izaberite akciju iz menija.",
@@ -437,6 +440,7 @@ MESSAGES: Mapping[str, Mapping[str, str]] = {
         "admin_analytics_help": "Komanda: /analytics 2026-05-08",
         "admin_analytics_report_title": "Analitika za {slot_date}:",
         "admin_analytics_command_error": "Neispravna komanda analitike. Koristite /analytics YYYY-MM-DD.",
+        "rate_limit_exceeded": "Previše poruka. Sačekajte par sekundi i pokušajte ponovo.",
     },
 }
 

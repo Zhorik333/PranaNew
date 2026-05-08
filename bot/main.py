@@ -13,6 +13,7 @@ from aiogram.enums import ParseMode
 
 from bot.config import Config, load_config
 from bot.db import DEFAULT_POOL_FACTORY, PoolFactory, close_pool, create_pool
+from bot.middlewares.rate_limit import RateLimitMiddleware
 from bot.routers.admin import create_admin_router
 from bot.routers.client import create_client_router
 from bot.services.review_scheduler import start_review_request_scheduler
@@ -38,6 +39,11 @@ def create_dispatcher(*routers: Router) -> Dispatcher:
     """
 
     dispatcher = Dispatcher()
+    rate_limit_middleware = RateLimitMiddleware()
+    dispatcher.message.middleware(rate_limit_middleware)
+    dispatcher.callback_query.middleware(rate_limit_middleware)
+    dispatcher.workflow_data["rate_limit_enabled"] = True
+    dispatcher.workflow_data["rate_limit_middleware"] = rate_limit_middleware
     for router in routers or (create_client_router(), create_admin_router()):
         dispatcher.include_router(router)
     return dispatcher
