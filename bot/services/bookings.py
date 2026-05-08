@@ -9,7 +9,11 @@ from typing import Any
 
 from bot.repositories.bookings import BookingsRepository
 from bot.repositories.slots import SlotsRepository
-from bot.services.booking_validation import BookingValidationError, validate_slot_selection
+from bot.services.booking_validation import (
+    DEFAULT_MAX_CONSECUTIVE_SLOTS,
+    BookingValidationError,
+    validate_slot_selection,
+)
 from bot.structured_logging import get_structured_logger, log_event
 
 DEFAULT_BOOKING_STATUS = "active"
@@ -267,7 +271,13 @@ class BookingService:
                 )
                 return True
 
-    async def create_booking(self, *, user_id: int, selected_slot_ids: list[int]) -> int:
+    async def create_booking(
+        self,
+        *,
+        user_id: int,
+        selected_slot_ids: list[int],
+        max_consecutive: int = DEFAULT_MAX_CONSECUTIVE_SLOTS,
+    ) -> int:
         """Create or return an idempotent active booking for selected slots.
 
         The selected slot rows are locked inside the transaction before existence,
@@ -280,6 +290,8 @@ class BookingService:
             raise BookingCreationError("empty_selection")
         if len(set(selected_slot_ids)) != len(selected_slot_ids):
             raise BookingCreationError("duplicate_slots")
+        if max_consecutive < 1:
+            raise BookingCreationError("max_consecutive")
 
         async with self.db_pool.acquire() as connection:
             async with connection.transaction():
@@ -293,7 +305,7 @@ class BookingService:
                     raise BookingCreationError("slot_unavailable")
 
                 try:
-                    ordered_slots = validate_slot_selection(locked_slots)
+                    ordered_slots = validate_slot_selection(locked_slots, max_consecutive=max_consecutive)
                 except BookingValidationError as error:
                     raise BookingCreationError(str(error)) from error
 

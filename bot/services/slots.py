@@ -217,19 +217,30 @@ def selected_slots(
         raise SlotSelectionError(error_key) from error
 
 
-def pickup_time(available_slots: list[Any], selected_slot_ids: list[int]) -> time:
+def pickup_time(
+    available_slots: list[Any],
+    selected_slot_ids: list[int],
+    *,
+    max_consecutive: int = DEFAULT_MAX_CONSECUTIVE_SLOTS,
+) -> time:
     """Return pickup time for a selected chain: the start time of the last slot."""
 
-    slots = selected_slots(available_slots, selected_slot_ids)
+    slots = selected_slots(available_slots, selected_slot_ids, max_consecutive=max_consecutive)
     return calculate_validated_last_slot_time(slots)
 
 
-def format_booking_preview_text(available_slots: list[Any], selected_slot_ids: list[int], language: str) -> str:
+def format_booking_preview_text(
+    available_slots: list[Any],
+    selected_slot_ids: list[int],
+    language: str,
+    *,
+    max_consecutive: int = DEFAULT_MAX_CONSECUTIVE_SLOTS,
+) -> str:
     """Format selected slots and pickup time for the booking preview screen."""
 
     from bot.i18n import t
 
-    slots = selected_slots(available_slots, selected_slot_ids)
+    slots = selected_slots(available_slots, selected_slot_ids, max_consecutive=max_consecutive)
     slot_lines = "\n".join(f"• {format_slot_label(slot)}" for slot in slots)
     pickup = _slot_start(slots[-1]).strftime("%H:%M")
     return f"{t('preview_title', language)}\n\n{slot_lines}\n\n{t('pickup_time', language, time=pickup)}"

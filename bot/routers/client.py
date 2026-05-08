@@ -24,6 +24,7 @@ from bot.services.booking_notifications import (
 from bot.services.admin_i18n import translate_with_overrides
 from bot.services.bookings import BookingCancellationError, BookingCreationError, BookingService, REVIEW_REQUEST_CALLBACK_PREFIX
 from bot.services.language import ensure_user_language, get_user_language, save_user_language
+from bot.services.settings import SettingsService
 from bot.services.reviews import (
     PUBLIC_REVIEWS_MORE_CALLBACK_PREFIX,
     PublicReviewsService,
@@ -55,6 +56,17 @@ LANGUAGE_CALLBACK_PREFIX = "language:"
 LANGUAGE_MENU_TEXTS = {t("menu_language", language) for language in SUPPORTED_LANGUAGES}
 FREE_SLOTS_MENU_TEXTS = {t("menu_free_slots", language) for language in SUPPORTED_LANGUAGES}
 REVIEWS_MENU_TEXTS = {t("menu_reviews", language) for language in SUPPORTED_LANGUAGES}
+
+
+async def get_configured_max_consecutive(db_pool) -> int:
+    """Return the current max_consecutive setting, or the safe default when unavailable."""
+
+    if not hasattr(db_pool, "acquire"):
+        return DEFAULT_MAX_CONSECUTIVE_SLOTS
+    try:
+        return (await SettingsService(db_pool).get_settings()).max_consecutive
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_CONSECUTIVE_SLOTS
 
 
 async def handle_start(message: Message, db_pool) -> None:
@@ -121,18 +133,20 @@ async def handle_slot_selected(callback: CallbackQuery, db_pool) -> None:
     tg_id = callback.from_user.id if callback.from_user is not None else 0
     language = await get_user_language(db_pool, tg_id)
     try:
+        max_consecutive = await get_configured_max_consecutive(db_pool)
         clicked_slot_id, selected_slot_ids = parse_slot_callback_data(callback.data or "")
         slots = await list_available_slots(db_pool)
         new_selected_ids = toggle_slot_selection(
             slots,
             selected_slot_ids=selected_slot_ids,
             clicked_slot_id=clicked_slot_id,
+            max_consecutive=max_consecutive,
         )
     except SlotSelectionError as error:
         error_key = str(error)
         if error_key == "max_consecutive":
             await callback.answer(
-                t("max_consecutive_error", language, max_slots=DEFAULT_MAX_CONSECUTIVE_SLOTS),
+                t("max_consecutive_error", language, max_slots=max_consecutive),
                 show_alert=True,
             )
         elif error_key == "non_consecutive":
@@ -155,16 +169,17 @@ async def handle_booking_preview(callback: CallbackQuery, db_pool) -> None:
     tg_id = callback.from_user.id if callback.from_user is not None else 0
     language = await get_user_language(db_pool, tg_id)
     try:
+        max_consecutive = await get_configured_max_consecutive(db_pool)
         selected_slot_ids = parse_booking_preview_callback_data(callback.data or "")
         slots = await list_available_slots(db_pool)
-        preview_text = format_booking_preview_text(slots, selected_slot_ids, language)
+        preview_text = format_booking_preview_text(slots, selected_slot_ids, language, max_consecutive=max_consecutive)
     except SlotSelectionError as error:
         error_key = str(error)
         if error_key in {"preview_empty_selection", "empty_selection"}:
             await callback.answer(t("preview_empty_selection_error", language), show_alert=True)
         elif error_key == "max_consecutive":
             await callback.answer(
-                t("max_consecutive_error", language, max_slots=DEFAULT_MAX_CONSECUTIVE_SLOTS),
+                t("max_consecutive_error", language, max_slots=max_consecutive),
                 show_alert=True,
             )
         elif error_key == "non_consecutive":
@@ -214,16 +229,21 @@ async def handle_booking_confirm(callback: CallbackQuery, db_pool, config=None) 
     language = await get_user_language(db_pool, tg_id)
     booking_service = BookingService(db_pool)
     try:
+        max_consecutive = await get_configured_max_consecutive(db_pool)
         selected_slot_ids = parse_booking_preview_callback_data(
             callback.data or "",
             prefix=BOOKING_PREVIEW_CONFIRM_CALLBACK_PREFIX,
         )
-        booking_id = await booking_service.create_booking(user_id=tg_id, selected_slot_ids=selected_slot_ids)
+        booking_id = await booking_service.create_booking(
+            user_id=tg_id,
+            selected_slot_ids=selected_slot_ids,
+            max_consecutive=max_consecutive,
+        )
     except (ValueError, BookingCreationError) as error:
         error_key = str(error)
         if error_key == "max_consecutive":
             await callback.answer(
-                t("max_consecutive_error", language, max_slots=DEFAULT_MAX_CONSECUTIVE_SLOTS),
+                t("max_consecutive_error", language, max_slots=max_consecutive),
                 show_alert=True,
             )
         elif error_key == "non_consecutive":
